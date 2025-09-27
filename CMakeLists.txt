@@ -9,20 +9,24 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 add_definitions(-DBOOST_ERROR_CODE_HEADER_ONLY)
 
+option(PHYRE_BUILD_TESTS "Build simulator test executables" OFF)
+
 ##############################################
 # Declare dependencies
 find_package(Boost 1.58 REQUIRED COMPONENTS program_options filesystem thread)
 find_package(Threads REQUIRED)
 find_package(pybind11 REQUIRED)
 
-# Build GTest.
-# Prevent overriding the parent project's compiler/linker
-# settings on Windows
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+if(PHYRE_BUILD_TESTS)
+  # Build GTest.
+  # Prevent overriding the parent project's compiler/linker
+  # settings on Windows
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
-# Add googletest directly to our build. This defines
-# the gtest and gtest_main targets.
-add_subdirectory(${CMAKE_SOURCE_DIR}/third-party/googletest EXCLUDE_FROM_ALL)
+  # Add googletest directly to our build. This defines
+  # the gtest and gtest_main targets.
+  add_subdirectory(${CMAKE_SOURCE_DIR}/third-party/googletest EXCLUDE_FROM_ALL)
+endif()
 
 # Check for math library for clip2tri.
 include(CheckLibraryExists)
@@ -33,9 +37,38 @@ endif(HAVE_M_LIB)
 
 # Thrift CPP library.
 add_library(thrift STATIC IMPORTED)
-set_target_properties(thrift PROPERTIES IMPORTED_LOCATION $ENV{CONDA_PREFIX}/lib/libthrift.a)
+
+set(_thrift_candidates)
+if(DEFINED ENV{CONDA_PREFIX})
+  list(APPEND _thrift_candidates $ENV{CONDA_PREFIX}/lib/libthrift.a)
+endif()
+if(DEFINED ENV{HOMEBREW_PREFIX})
+  list(APPEND _thrift_candidates $ENV{HOMEBREW_PREFIX}/opt/thrift/lib/libthrift.a)
+  list(APPEND _thrift_candidates $ENV{HOMEBREW_PREFIX}/lib/libthrift.a)
+endif()
+list(APPEND _thrift_candidates /opt/homebrew/opt/thrift/lib/libthrift.a /opt/homebrew/lib/libthrift.a)
+
+foreach(_candidate IN LISTS _thrift_candidates)
+  if(EXISTS "${_candidate}")
+    set(_thrift_lib "${_candidate}")
+    break()
+  endif()
+endforeach()
+
+if(NOT _thrift_lib)
+  find_library(_thrift_lib thrift)
+endif()
+
+if(NOT _thrift_lib)
+  message(FATAL_ERROR "Could not locate libthrift.a; set THRIFT library path manually")
+endif()
+
+get_filename_component(_thrift_prefix "${_thrift_lib}" DIRECTORY)
+get_filename_component(_thrift_prefix "${_thrift_prefix}" DIRECTORY)
+
+set_target_properties(thrift PROPERTIES IMPORTED_LOCATION "${_thrift_lib}")
 set_target_properties(thrift PROPERTIES INTERFACE_LINK_LIBRARIES Boost::program_options)
-set_target_properties(thrift PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${Boost_INCLUDE_DIRS};$ENV{CONDA_PREFIX}/include")
+set_target_properties(thrift PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${Boost_INCLUDE_DIRS};${_thrift_prefix}/include")
 
 
 # Box2d
@@ -88,16 +121,12 @@ set(
   THRIFT_GEN_CPP_FILES
   gen-cpp/TaskService.cpp
   gen-cpp/TaskService.h
-  gen-cpp/scene_constants.cpp
-  gen-cpp/scene_constants.h
   gen-cpp/scene_types.cpp
   gen-cpp/scene_types.h
   gen-cpp/shared_constants.cpp
   gen-cpp/shared_constants.h
   gen-cpp/shared_types.cpp
   gen-cpp/shared_types.h
-  gen-cpp/task_constants.cpp
-  gen-cpp/task_constants.h
   gen-cpp/task_types.cpp
   gen-cpp/task_types.h
 )
@@ -117,7 +146,7 @@ add_custom_command(
     gen-py/task/constants.py
     gen-py/task/ttypes.py
   COMMAND thrift -r --gen py ${CMAKE_SOURCE_DIR}/src/if/task.thrift
-  COMMAND sed -i"" "'s/\\([a-z]\\+\\).ttypes/phyre.interface.\\1.ttypes/g'" gen-py/*/*.py
+  COMMAND sed -i '' "'s/\\([a-z]\\+\\).ttypes/phyre.interface.\\1.ttypes/g'" gen-py/*/*.py
   DEPENDS ${THRIFT_SOURCE_FILES}
   COMMENT "Compiling thrift for Python"
 )
@@ -205,40 +234,42 @@ target_compile_features(simulator_bindings PRIVATE cxx_std_17)
 ##########################################
 # Tests
 
-include(GoogleTest)
-enable_testing()
+if(PHYRE_BUILD_TESTS)
+  include(GoogleTest)
+  enable_testing()
 
-# Task solution validation.
-add_executable(task_validation_test src/simulator/tests/test_task_validation.cpp)
-target_link_libraries(task_validation_test task_io simulator_lib gtest_main)
-target_include_directories(task_validation_test PRIVATE src/simulator)
-target_compile_features(task_validation_test PRIVATE cxx_std_17)
-gtest_add_tests(TARGET task_validation_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  # Task solution validation.
+  add_executable(task_validation_test src/simulator/tests/test_task_validation.cpp)
+  target_link_libraries(task_validation_test task_io simulator_lib gtest_main)
+  target_include_directories(task_validation_test PRIVATE src/simulator)
+  target_compile_features(task_validation_test PRIVATE cxx_std_17)
+  gtest_add_tests(TARGET task_validation_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
-# Geometry.
-add_executable(geometry_test src/simulator/tests/test_geometry.cpp)
-target_link_libraries(geometry_test simulator_lib gtest_main)
-target_include_directories(geometry_test PRIVATE src/simulator)
-target_compile_features(geometry_test PRIVATE cxx_std_17)
-gtest_add_tests(TARGET geometry_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  # Geometry.
+  add_executable(geometry_test src/simulator/tests/test_geometry.cpp)
+  target_link_libraries(geometry_test simulator_lib gtest_main)
+  target_include_directories(geometry_test PRIVATE src/simulator)
+  target_compile_features(geometry_test PRIVATE cxx_std_17)
+  gtest_add_tests(TARGET geometry_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
-# Simulation + box2d-and-back-conversion.
-add_executable(backend_test src/simulator/tests/test_backend.cpp)
-target_link_libraries(backend_test simulator_lib logger task_io gtest_main)
-target_include_directories(backend_test PRIVATE src/simulator)
-target_compile_features(backend_test PRIVATE cxx_std_17)
-gtest_add_tests(TARGET backend_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  # Simulation + box2d-and-back-conversion.
+  add_executable(backend_test src/simulator/tests/test_backend.cpp)
+  target_link_libraries(backend_test simulator_lib logger task_io gtest_main)
+  target_include_directories(backend_test PRIVATE src/simulator)
+  target_compile_features(backend_test PRIVATE cxx_std_17)
+  gtest_add_tests(TARGET backend_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
-# User input vectorization.
-add_executable(user_input_test src/simulator/tests/test_user_input.cpp)
-target_link_libraries(user_input_test simulator_lib task_io gtest_main)
-target_include_directories(user_input_test PRIVATE src/simulator)
-target_compile_features(user_input_test PRIVATE cxx_std_17)
-gtest_add_tests(TARGET user_input_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  # User input vectorization.
+  add_executable(user_input_test src/simulator/tests/test_user_input.cpp)
+  target_link_libraries(user_input_test simulator_lib task_io gtest_main)
+  target_include_directories(user_input_test PRIVATE src/simulator)
+  target_compile_features(user_input_test PRIVATE cxx_std_17)
+  gtest_add_tests(TARGET user_input_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
-# Multi process simluation.
-add_executable(parallel_simulation_test src/simulator/tests/test_parallel_simulation.cpp)
-target_link_libraries(parallel_simulation_test simulator_lib gtest_main)
-target_include_directories(parallel_simulation_test PRIVATE src/simulator)
-target_compile_features(parallel_simulation_test PRIVATE cxx_std_17)
-gtest_add_tests(TARGET parallel_simulation_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  # Multi process simulation.
+  add_executable(parallel_simulation_test src/simulator/tests/test_parallel_simulation.cpp)
+  target_link_libraries(parallel_simulation_test simulator_lib gtest_main)
+  target_include_directories(parallel_simulation_test PRIVATE src/simulator)
+  target_compile_features(parallel_simulation_test PRIVATE cxx_std_17)
+  gtest_add_tests(TARGET parallel_simulation_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+endif()
