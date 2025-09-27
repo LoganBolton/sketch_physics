@@ -24,6 +24,7 @@ if GEN_PY.exists():
 from phyre import simulator  # noqa: E402
 from phyre.creator import creator as creator_lib  # noqa: E402
 from phyre.creator import constants as creator_constants  # noqa: E402
+from phyre.creator import shapes as shapes_lib  # noqa: E402
 from phyre.interface.scene import ttypes as scene_if  # noqa: E402
 
 import simple_scene_demo as renderer  # noqa: E402
@@ -78,19 +79,24 @@ def _clamp(value: float, min_value: float, max_value: float) -> float:
     return max(min_value, min(max_value, value))
 
 
-def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreator, List[float]]:
+def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreator, List[float], float]:
     if args.seed is not None:
         random.seed(args.seed)
         np.random.seed(args.seed)
 
     creator = creator_lib.TaskCreator()
 
+    bucket_centers, bucket_top = _add_buckets(creator, max(1, args.num_buckets))
+
     # Random static bars.
+    safe_height = creator.scene.height - 80
+    max_bar_width = creator.scene.width / 3
     for _ in range(max(0, args.num_bars)):
-        scale = random.uniform(0.4, 0.8)
-        bar = creator.add("static bar", scale=scale)
-        cx = random.uniform(40, creator.scene.width - 40)
-        cy = random.uniform(20, creator.scene.height - 40)
+        width = random.uniform(30, max_bar_width)
+        height = random.uniform(4, 10)
+        bar = creator.add_box(width=width, height=height, dynamic=False)
+        cx = random.uniform(width / 2 + 10, creator.scene.width - width / 2 - 10)
+        cy = random.uniform(bucket_top + height / 2 + 10, safe_height)
         angle = random.uniform(-60, 60)
         bar.set_center(cx, cy).set_angle(angle)
         bar.set_color("black")
@@ -98,15 +104,19 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
     # Random polygons.
     for _ in range(max(0, args.num_polys)):
         num_vertices = random.randint(3, 6)
-        radius = random.uniform(20, 50)
-        cx = random.uniform(radius, creator.scene.width - radius)
-        cy = random.uniform(radius, creator.scene.height - radius - 20)
-        vertices = _random_convex_polygon(cx, cy, radius, num_vertices)
-    polygon = creator.add_convex_polygon(vertices, dynamic=False)
-    polygon.set_color("black")
-
-    # Static buckets along the bottom.
-    bucket_centers = _add_buckets(creator, max(1, args.num_buckets))
+        max_radius = min(50, safe_height - bucket_top - 30)
+        radius = random.uniform(20, max_radius)
+        cx = random.uniform(radius + 10, creator.scene.width - radius - 10)
+        cy = random.uniform(bucket_top + radius + 20, safe_height)
+        for _attempt in range(10):
+            vertices = _random_convex_polygon(cx, cy, radius, num_vertices)
+            poly_vectors = [scene_if.Vector(x, y) for x, y in vertices]
+            if shapes_lib.is_valid_convex_polygon(poly_vectors):
+                break
+        else:
+            continue
+        polygon = creator.add_convex_polygon(vertices, dynamic=False)
+        polygon.set_color("black")
 
     # Dynamic ball near the top.
     ball = creator.add("dynamic ball", scale=args.ball_radius)
@@ -122,10 +132,10 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
     )
     creator.set_meta(creator.SolutionTier.GENERAL)
 
-    return creator, bucket_centers
+    return creator, bucket_centers, bucket_top
 
 
-def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> List[float]:
+def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> Tuple[List[float], float]:
     width = creator.scene.width
     bucket_width = width / count
     wall_thickness = 6
@@ -166,13 +176,14 @@ def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> List[float]:
         last_right_x = right_x
         centers.append(center_x)
 
-    return centers
+    bucket_top = bucket_height + base_height
+    return centers, bucket_top
 
 def main(args: argparse.Namespace) -> None:
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    creator, bucket_centers = _build_random_scene(args)
+    creator, bucket_centers, bucket_top = _build_random_scene(args)
 
     scene_frames = simulator.simulate_scene(creator.scene, args.steps)
 
