@@ -10,7 +10,11 @@ from typing import Dict, Iterable, List, Tuple
 
 import imageio.v3 as imageio
 import imageio.v2 as imageio_v2
-import imageio_ffmpeg  # noqa: F401 ensures ffmpeg plugin is registered
+
+try:  # Register ffmpeg plugin when available
+    import imageio_ffmpeg  # noqa: F401
+except ImportError:  # pragma: no cover - optional dependency
+    imageio_ffmpeg = None
 import numpy as np
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -204,6 +208,11 @@ def _write_animation(
 
     effective_speed = playback_speed if playback_speed > 0 else 1.0
     if video_format == "mp4":
+        if imageio_ffmpeg is None:
+            raise RuntimeError(
+                "MP4 export requires the imageio-ffmpeg plugin. Install it via"
+                " `pip install imageio-ffmpeg`."
+            )
         effective_fps = fps * effective_speed / frame_stride
         video_path = output_dir / "simple_scene.mp4"
         try:
@@ -219,8 +228,10 @@ def _write_animation(
             raise RuntimeError(
                 "Writing MP4 requires the imageio-ffmpeg plugin and an ffmpeg binary."
             ) from exc
-        png_path = output_dir / "simple_scene_final.png"
-        imageio.imwrite(png_path, frames[-1])
+        start_path = output_dir / "simple_scene_start.png"
+        final_path = output_dir / "simple_scene_final.png"
+        imageio.imwrite(start_path, frames[0])
+        imageio.imwrite(final_path, frames[-1])
         return video_path, effective_fps
 
     duration = frame_stride / (fps * effective_speed)
@@ -232,9 +243,10 @@ def _write_animation(
     gif_path = output_dir / "simple_scene.gif"
     imageio.imwrite(gif_path, frames, duration=max(duration, 0.01), loop=0)
     gif_fps = 1.0 / max(duration, 0.01)
-    # Also dump the final frame as a PNG snapshot.
-    png_path = output_dir / "simple_scene_final.png"
-    imageio.imwrite(png_path, frames[-1])
+    start_path = output_dir / "simple_scene_start.png"
+    final_path = output_dir / "simple_scene_final.png"
+    imageio.imwrite(start_path, frames[0])
+    imageio.imwrite(final_path, frames[-1])
     return gif_path, gif_fps
 
 
@@ -347,7 +359,8 @@ def main(args: argparse.Namespace) -> None:
 
     print("Scene metadata written to", metadata_path)
     print("Animation written to", video_path)
-    print("Snapshot written to", output_dir / "simple_scene_final.png")
+    print("Start frame saved to", output_dir / "simple_scene_start.png")
+    print("Final frame saved to", output_dir / "simple_scene_final.png")
 
 
 if __name__ == "__main__":
