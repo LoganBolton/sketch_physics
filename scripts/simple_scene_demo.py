@@ -219,6 +219,8 @@ def _write_animation(
             raise RuntimeError(
                 "Writing MP4 requires the imageio-ffmpeg plugin and an ffmpeg binary."
             ) from exc
+        png_path = output_dir / "simple_scene_final.png"
+        imageio.imwrite(png_path, frames[-1])
         return video_path, effective_fps
 
     duration = frame_stride / (fps * effective_speed)
@@ -230,6 +232,9 @@ def _write_animation(
     gif_path = output_dir / "simple_scene.gif"
     imageio.imwrite(gif_path, frames, duration=max(duration, 0.01), loop=0)
     gif_fps = 1.0 / max(duration, 0.01)
+    # Also dump the final frame as a PNG snapshot.
+    png_path = output_dir / "simple_scene_final.png"
+    imageio.imwrite(png_path, frames[-1])
     return gif_path, gif_fps
 
 
@@ -321,6 +326,7 @@ def main(args: argparse.Namespace) -> None:
         "outputs": {
             "path": str(video_path),
             "format": args.video_format,
+            "snapshot": str(output_dir / "simple_scene_final.png"),
         },
         "render": {
             "pixel_scale": pixel_scale,
@@ -341,6 +347,7 @@ def main(args: argparse.Namespace) -> None:
 
     print("Scene metadata written to", metadata_path)
     print("Animation written to", video_path)
+    print("Snapshot written to", output_dir / "simple_scene_final.png")
 
 
 if __name__ == "__main__":

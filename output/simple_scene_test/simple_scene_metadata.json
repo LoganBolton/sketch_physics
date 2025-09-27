@@ -230,7 +230,8 @@
   },
   "outputs": {
     "path": "output/simple_scene_test/simple_scene.gif",
-    "format": "gif"
+    "format": "gif",
+    "snapshot": "output/simple_scene_test/simple_scene_final.png"
   },
   "render": {
     "pixel_scale": 2

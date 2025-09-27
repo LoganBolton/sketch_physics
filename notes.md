@@ -22,3 +22,5 @@ python scripts/simple_scene_demo.py \
 ```
 
 Note: MP4 output requires `pip install imageio-ffmpeg` so the FFmpeg writer is available. Trajectory lines (red) are overlaid automatically for every dynamic body.
+
+- Each run also emits `simple_scene_final.png`, capturing the last frame with red trajectories overlayed.
