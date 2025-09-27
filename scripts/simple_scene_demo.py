@@ -190,6 +190,20 @@ def _draw_labels(image: np.ndarray, labels: List[Tuple[float, str]],
         for ch in text:
             _draw_digit(image, row, col, ch, color, pixel_scale=label_scale)
             col += digit_width + spacing
+
+
+def _draw_wall_border(image: np.ndarray, scale: int,
+                      color: Tuple[int, int, int] = (0, 0, 0)) -> None:
+    if image.size == 0:
+        return
+    thickness = max(2, 2 * scale)
+    h, w, _ = image.shape
+    image[:thickness, :, :] = color
+    image[-thickness:, :, :] = color
+    image[:, :thickness, :] = color
+    image[:, -thickness:, :] = color
+
+
 def _generate_frames(
     scenes: Iterable,
     *,
@@ -243,6 +257,8 @@ def _generate_frames(
                             pts.append((row, col))
                 if pts:
                     _draw_polyline(rgb, pts, (255, 0, 0))
+
+        _draw_wall_border(rgb, scale)
 
         frames.append(rgb)
     return frames, len(frames)

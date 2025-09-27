@@ -79,7 +79,7 @@ def _clamp(value: float, min_value: float, max_value: float) -> float:
     return max(min_value, min(max_value, value))
 
 
-def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreator, List[float], float]:
+def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreator, List[float]]:
     if args.seed is not None:
         random.seed(args.seed)
         np.random.seed(args.seed)
@@ -132,7 +132,7 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
     )
     creator.set_meta(creator.SolutionTier.GENERAL)
 
-    return creator, bucket_centers, bucket_top
+    return creator, bucket_centers
 
 
 def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> Tuple[List[float], float]:
@@ -183,7 +183,7 @@ def main(args: argparse.Namespace) -> None:
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    creator, bucket_centers, bucket_top = _build_random_scene(args)
+    creator, bucket_centers = _build_random_scene(args)
 
     scene_frames = simulator.simulate_scene(creator.scene, args.steps)
 
