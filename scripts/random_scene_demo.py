@@ -78,7 +78,7 @@ def _clamp(value: float, min_value: float, max_value: float) -> float:
     return max(min_value, min(max_value, value))
 
 
-def _build_random_scene(args: argparse.Namespace) -> creator_lib.TaskCreator:
+def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreator, List[float]]:
     if args.seed is not None:
         random.seed(args.seed)
         np.random.seed(args.seed)
@@ -106,7 +106,7 @@ def _build_random_scene(args: argparse.Namespace) -> creator_lib.TaskCreator:
     polygon.set_color("black")
 
     # Static buckets along the bottom.
-    _add_buckets(creator, max(1, args.num_buckets))
+    bucket_centers = _add_buckets(creator, max(1, args.num_buckets))
 
     # Dynamic ball near the top.
     ball = creator.add("dynamic ball", scale=args.ball_radius)
@@ -122,10 +122,10 @@ def _build_random_scene(args: argparse.Namespace) -> creator_lib.TaskCreator:
     )
     creator.set_meta(creator.SolutionTier.GENERAL)
 
-    return creator
+    return creator, bucket_centers
 
 
-def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> None:
+def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> List[float]:
     width = creator.scene.width
     bucket_width = width / count
     wall_thickness = 6
@@ -133,6 +133,7 @@ def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> None:
     base_height = 6
 
     last_right_x = None
+    centers: List[float] = []
 
     for i in range(count):
         center_x = (i + 0.5) * bucket_width
@@ -163,12 +164,15 @@ def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> None:
         right.set_color("purple")
 
         last_right_x = right_x
+        centers.append(center_x)
+
+    return centers
 
 def main(args: argparse.Namespace) -> None:
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    creator = _build_random_scene(args)
+    creator, bucket_centers = _build_random_scene(args)
 
     scene_frames = simulator.simulate_scene(creator.scene, args.steps)
 
@@ -178,6 +182,7 @@ def main(args: argparse.Namespace) -> None:
     speed = max(args.playback_speed, 0.01)
 
     trajectories = renderer._collect_trajectories(scene_frames)
+    label_specs = [(center, str(i + 1)) for i, center in enumerate(bucket_centers)]
     frames, num_frames = renderer._generate_frames(
         scene_frames,
         scale=pixel_scale,
@@ -192,6 +197,8 @@ def main(args: argparse.Namespace) -> None:
         frame_stride=stride,
         playback_speed=speed,
         video_format=args.video_format,
+        pixel_scale=pixel_scale,
+        labels=label_specs,
     )
 
     if args.video_format == "gif":
@@ -222,6 +229,10 @@ def main(args: argparse.Namespace) -> None:
             "height": creator.scene.height,
             "num_bodies": len(creator.scene.bodies),
             "bodies": renderer._summarize_scene_bodies(creator.scene),
+            "buckets": [
+                {"index": i + 1, "center_x": center}
+                for i, center in enumerate(bucket_centers)
+            ],
         },
         "simulation": {
             "steps_requested": args.steps,

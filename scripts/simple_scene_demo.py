@@ -137,6 +137,59 @@ def _draw_polyline(image: np.ndarray, points: List[Tuple[int, int]], color: Tupl
         image[rr, cc] = color
 
 
+DIGITS = {
+    "0": ["###", "# #", "# #", "# #", "###"],
+    "1": [" ##", "  #", "  #", "  #", "###"],
+    "2": ["###", "  #", "###", "#  ", "###"],
+    "3": ["###", "  #", "###", "  #", "###"],
+    "4": ["# #", "# #", "###", "  #", "  #"],
+    "5": ["###", "#  ", "###", "  #", "###"],
+    "6": ["###", "#  ", "###", "# #", "###"],
+    "7": ["###", "  #", "  #", "  #", "  #"],
+    "8": ["###", "# #", "###", "# #", "###"],
+    "9": ["###", "# #", "###", "  #", "###"],
+}
+
+DIGIT_HEIGHT = len(DIGITS["0"])
+DIGIT_WIDTH = len(DIGITS["0"][0])
+
+
+def _draw_digit(image: np.ndarray, top: int, left: int, digit: str,
+                color: Tuple[int, int, int], pixel_scale: int = 1) -> None:
+    pattern = DIGITS.get(digit)
+    if not pattern:
+        return
+    h, w, _ = image.shape
+    for r, row in enumerate(pattern):
+        for c, ch in enumerate(row):
+            if ch == "#":
+                rr = top + r * pixel_scale
+                cc = left + c * pixel_scale
+                r2 = min(rr + pixel_scale, h)
+                c2 = min(cc + pixel_scale, w)
+                if rr < h and cc < w:
+                    image[rr:r2, cc:c2] = color
+
+
+def _draw_labels(image: np.ndarray, labels: List[Tuple[float, str]],
+                 scale: int, color: Tuple[int, int, int] = (80, 80, 80)) -> None:
+    if not labels:
+        return
+    h, w, _ = image.shape
+    label_scale = max(3, scale * 3)
+    digit_height = DIGIT_HEIGHT * label_scale
+    digit_width = DIGIT_WIDTH * label_scale
+    spacing = label_scale
+    row = max(0, h - digit_height - max(8 * scale, 40))
+    for center_x, text in labels:
+        col_center = int(round(center_x * scale))
+        total_width = len(text) * digit_width + max(len(text) - 1, 0) * spacing
+        start_col = col_center - total_width // 2
+        start_col = max(0, min(start_col, w - total_width))
+        col = start_col
+        for ch in text:
+            _draw_digit(image, row, col, ch, color, pixel_scale=label_scale)
+            col += digit_width + spacing
 def _generate_frames(
     scenes: Iterable,
     *,
@@ -203,6 +256,8 @@ def _write_animation(
     frame_stride: int,
     playback_speed: float,
     video_format: str,
+    pixel_scale: int,
+    labels: List[Tuple[float, str]] | None = None,
 ) -> Tuple[pathlib.Path, float]:
     """Serialize frames to disk and return the output path and effective FPS."""
 
@@ -230,8 +285,13 @@ def _write_animation(
             ) from exc
         start_path = output_dir / "simple_scene_start.png"
         final_path = output_dir / "simple_scene_final.png"
-        imageio.imwrite(start_path, frames[0])
-        imageio.imwrite(final_path, frames[-1])
+        start_frame = frames[0].copy()
+        final_frame = frames[-1].copy()
+        if labels:
+            _draw_labels(start_frame, labels, pixel_scale, color=(255, 0, 0))
+            _draw_labels(final_frame, labels, pixel_scale, color=(255, 0, 0))
+        imageio.imwrite(start_path, start_frame)
+        imageio.imwrite(final_path, final_frame)
         return video_path, effective_fps
 
     duration = frame_stride / (fps * effective_speed)
@@ -245,8 +305,13 @@ def _write_animation(
     gif_fps = 1.0 / max(duration, 0.01)
     start_path = output_dir / "simple_scene_start.png"
     final_path = output_dir / "simple_scene_final.png"
-    imageio.imwrite(start_path, frames[0])
-    imageio.imwrite(final_path, frames[-1])
+    start_frame = frames[0].copy()
+    final_frame = frames[-1].copy()
+    if labels:
+        _draw_labels(start_frame, labels, pixel_scale, color=(255, 0, 0))
+        _draw_labels(final_frame, labels, pixel_scale, color=(255, 0, 0))
+    imageio.imwrite(start_path, start_frame)
+    imageio.imwrite(final_path, final_frame)
     return gif_path, gif_fps
 
 
@@ -302,6 +367,7 @@ def main(args: argparse.Namespace) -> None:
         scale=pixel_scale,
         frame_stride=stride,
         trajectories=trajectories,
+        labels=None,
     )
     video_path, effective_fps = _write_animation(
         frames,
@@ -310,6 +376,8 @@ def main(args: argparse.Namespace) -> None:
         frame_stride=stride,
         playback_speed=speed,
         video_format=args.video_format,
+        pixel_scale=pixel_scale,
+        labels=None,
     )
 
     relationship_value = creator.task.relationships[0]
@@ -338,7 +406,8 @@ def main(args: argparse.Namespace) -> None:
         "outputs": {
             "path": str(video_path),
             "format": args.video_format,
-            "snapshot": str(output_dir / "simple_scene_final.png"),
+            "start_frame": str(output_dir / "simple_scene_start.png"),
+            "final_frame": str(output_dir / "simple_scene_final.png"),
         },
         "render": {
             "pixel_scale": pixel_scale,
