@@ -88,13 +88,59 @@ def _summarize_scene_bodies(scene) -> List[Dict[str, object]]:
     return bodies
 
 
+def _collect_trajectories(
+    scenes: Iterable,
+) -> Dict[int, List[Tuple[float, float]]]:
+    """Capture per-body dynamic trajectories across all frames."""
+
+    scenes = list(scenes)
+    if not scenes:
+        return {}
+
+    dynamic_indices = [
+        idx for idx, body in enumerate(scenes[0].bodies)
+        if body.bodyType == scene_if.BodyType.DYNAMIC
+    ]
+    trajectories: Dict[int, List[Tuple[float, float]]] = {
+        idx: [] for idx in dynamic_indices
+    }
+    for scene in scenes:
+        for idx in dynamic_indices:
+            body = scene.bodies[idx]
+            trajectories[idx].append((body.position.x, body.position.y))
+    return trajectories
+
+
+def _draw_polyline(image: np.ndarray, points: List[Tuple[int, int]], color: Tuple[int, int, int]) -> None:
+    """Draw a polyline on the image."""
+
+    if len(points) < 2:
+        if points:
+            r, c = points[0]
+            image[r, c] = color
+        return
+    h, w, _ = image.shape
+    for (r0, c0), (r1, c1) in zip(points[:-1], points[1:]):
+        steps = int(max(abs(r1 - r0), abs(c1 - c0)))
+        if steps == 0:
+            rr = np.array([r0])
+            cc = np.array([c0])
+        else:
+            rr = np.linspace(r0, r1, steps + 1).round().astype(int)
+            cc = np.linspace(c0, c1, steps + 1).round().astype(int)
+        rr = np.clip(rr, 0, h - 1)
+        cc = np.clip(cc, 0, w - 1)
+        image[rr, cc] = color
+
+
 def _generate_frames(
     scenes: Iterable,
     *,
     scale: int,
     frame_stride: int,
+    trajectories: Dict[int, List[Tuple[float, float]]],
 ) -> Tuple[List[np.ndarray], int]:
-    """Convert simulator scenes into RGB frames."""
+    """Convert simulator scenes into RGB frames with trajectory overlays."""
 
     palette: Dict[int, Tuple[int, int, int]] = {
         creator_constants.ROLE_TO_COLOR_ID["BACKGROUND"]: (255, 255, 255),
@@ -107,19 +153,42 @@ def _generate_frames(
     }
     palette.setdefault(0, (255, 255, 255))
 
-    sampled = list(scenes[::frame_stride]) if frame_stride > 1 else list(scenes)
+    scenes = list(scenes)
+    sampled_indices = range(0, len(scenes), frame_stride)
     frames: List[np.ndarray] = []
-    for scene in sampled:
+    height = scenes[0].height if scenes else 0
+    width = scenes[0].width if scenes else 0
+
+    for scene_idx in sampled_indices:
+        scene = scenes[scene_idx]
         raster = simulator.scene_to_raster(scene)
         rgb = np.zeros((raster.shape[0], raster.shape[1], 3), dtype=np.uint8)
         for color_id, rgb_value in palette.items():
             mask = raster == color_id
             rgb[mask] = rgb_value
+
         rgb = np.flipud(rgb)
+
         if scale > 1:
             rgb = np.repeat(np.repeat(rgb, scale, axis=0), scale, axis=1)
+
+        if trajectories:
+            for body_idx, positions in trajectories.items():
+                upto = positions[:scene_idx + 1]
+                pts: List[Tuple[int, int]] = []
+                for x, y in upto:
+                    col = int(round(x))
+                    row = int(round(height - 1 - y))
+                    if 0 <= col < width and 0 <= row < height:
+                        if scale > 1:
+                            pts.append((row * scale, col * scale))
+                        else:
+                            pts.append((row, col))
+                if pts:
+                    _draw_polyline(rgb, pts, (255, 0, 0))
+
         frames.append(rgb)
-    return frames, len(sampled)
+    return frames, len(frames)
 
 
 def _write_animation(
@@ -210,8 +279,12 @@ def main(args: argparse.Namespace) -> None:
     fps = max(args.fps, 1)
     stride = max(args.frame_stride, 1)
     speed = max(args.playback_speed, 0.01)
+    trajectories = _collect_trajectories(simulation.sceneList)
     frames, num_sampled = _generate_frames(
-        simulation.sceneList, scale=pixel_scale, frame_stride=stride
+        simulation.sceneList,
+        scale=pixel_scale,
+        frame_stride=stride,
+        trajectories=trajectories,
     )
     video_path, effective_fps = _write_animation(
         frames,
@@ -255,6 +328,10 @@ def main(args: argparse.Namespace) -> None:
         "ball_start": {
             "x": 90,
             "y": args.ball_start_y,
+        },
+        "trajectories": {
+            str(idx): [{"x": x, "y": y} for (x, y) in positions]
+            for idx, positions in trajectories.items()
         },
     }
 

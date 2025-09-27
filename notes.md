@@ -20,3 +20,5 @@ python scripts/simple_scene_demo.py \
     --steps 120 \
     --output-dir output/fast_mp4
 ```
+
+Note: MP4 output requires `pip install imageio-ffmpeg` so the FFmpeg writer is available. Trajectory lines (red) are overlaid automatically for every dynamic body.

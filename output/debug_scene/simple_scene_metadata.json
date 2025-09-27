@@ -220,23 +220,39 @@
     ]
   },
   "simulation": {
-    "steps_requested": 150,
-    "frames_recorded": 30,
-    "frame_stride": 5,
+    "steps_requested": 3,
+    "frames_recorded": 3,
+    "frame_stride": 1,
     "requested_fps": 60,
-    "playback_speedup": 5.0,
+    "playback_speedup": 1.0,
     "effective_fps": 60.0,
     "solved": false
   },
   "outputs": {
-    "path": "output/fast_gif/simple_scene.gif",
+    "path": "output/debug_scene/simple_scene.gif",
     "format": "gif"
   },
   "render": {
-    "pixel_scale": 4
+    "pixel_scale": 1
   },
   "ball_start": {
     "x": 90,
     "y": 240.0
+  },
+  "trajectories": {
+    "5": [
+      {
+        "x": 90.0,
+        "y": 239.98365783691406
+      },
+      {
+        "x": 90.0,
+        "y": 239.95098876953125
+      },
+      {
+        "x": 90.0,
+        "y": 239.90199279785156
+      }
+    ]
   }
 }
