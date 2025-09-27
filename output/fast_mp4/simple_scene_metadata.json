@@ -220,20 +220,20 @@
     ]
   },
   "simulation": {
-    "steps_requested": 240,
+    "steps_requested": 120,
     "frames_recorded": 120,
-    "frame_stride": 2,
+    "frame_stride": 1,
     "requested_fps": 60,
-    "playback_speedup": 20.0,
-    "effective_fps": 100.0,
+    "playback_speedup": 50.0,
+    "effective_fps": 3000.0,
     "solved": false
   },
   "outputs": {
-    "path": "output/simple_scene/simple_scene.gif",
-    "format": "gif"
+    "path": "output/fast_mp4/simple_scene.mp4",
+    "format": "mp4"
   },
   "render": {
-    "pixel_scale": 4
+    "pixel_scale": 2
   },
   "ball_start": {
     "x": 90,

@@ -220,16 +220,16 @@
     ]
   },
   "simulation": {
-    "steps_requested": 240,
-    "frames_recorded": 120,
-    "frame_stride": 2,
+    "steps_requested": 150,
+    "frames_recorded": 30,
+    "frame_stride": 5,
     "requested_fps": 60,
-    "playback_speedup": 20.0,
-    "effective_fps": 100.0,
+    "playback_speedup": 5.0,
+    "effective_fps": 60.0,
     "solved": false
   },
   "outputs": {
-    "path": "output/simple_scene/simple_scene.gif",
+    "path": "output/fast_gif/simple_scene.gif",
     "format": "gif"
   },
   "render": {
