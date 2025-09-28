@@ -81,7 +81,7 @@ def _clamp(value: float, min_value: float, max_value: float) -> float:
     return max(min_value, min(max_value, value))
 
 
-def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreator, List[float]]:
+def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreator, List[float], float]:
     if args.seed is not None:
         random.seed(args.seed)
         np.random.seed(args.seed)
@@ -142,7 +142,7 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
     )
     creator.set_meta(creator.SolutionTier.GENERAL)
 
-    return creator, bucket_centers
+    return creator, bucket_centers, bucket_top
 
 
 def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> Tuple[List[float], float]:
@@ -195,15 +195,15 @@ def main(args: argparse.Namespace) -> None:
     for run in range(1, args.runs + 1):
         if args.runs > 1:
             output_dir = base_output / f"run_{run:03d}"
-            output_dir.mkdir(parents=True, exist_ok=True)
         else:
             output_dir = base_output
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         run_seed = (args.seed + run - 1) if args.seed is not None else None
         run_args = argparse.Namespace(**vars(args))
         run_args.seed = run_seed
 
-        creator, bucket_centers = _build_random_scene(run_args)
+        creator, bucket_centers, bucket_top = _build_random_scene(run_args)
 
         scene_frames = simulator.simulate_scene(creator.scene, args.steps)
 
@@ -250,13 +250,30 @@ def main(args: argparse.Namespace) -> None:
         else:
             final_snapshot = default_final
 
+        body_summaries = renderer._summarize_scene_bodies(creator.scene)
+        bucket_width = creator.scene.width / max(1, len(bucket_centers))
+        bucket_left_edges = [center - bucket_width / 2 for center in bucket_centers]
+        bucket_right_edges = [center + bucket_width / 2 for center in bucket_centers]
+        ball_index = next(
+            idx for idx, body in enumerate(body_summaries)
+            if body["bodyType"] == "DYNAMIC"
+        )
+        final_x, final_y = trajectories[ball_index][-1]
+        ball_radius = creator.scene.bodies[ball_index].shapes[0].circle.radius
+        bucket_hit = None
+        if final_y + ball_radius <= bucket_top:
+            for idx, (left, right) in enumerate(zip(bucket_left_edges, bucket_right_edges), start=1):
+                if left + ball_radius <= final_x <= right - ball_radius:
+                    bucket_hit = idx
+                    break
+
         metadata = {
             "seed": run_seed,
             "scene": {
                 "width": creator.scene.width,
                 "height": creator.scene.height,
                 "num_bodies": len(creator.scene.bodies),
-                "bodies": renderer._summarize_scene_bodies(creator.scene),
+                "bodies": body_summaries,
                 "buckets": [
                     {"index": i + 1, "center_x": center}
                     for i, center in enumerate(bucket_centers)
@@ -270,6 +287,9 @@ def main(args: argparse.Namespace) -> None:
                 "playback_speedup": speed,
                 "effective_fps": effective_fps,
                 "solved": None,
+                "bucket_hit": bucket_hit,
+                "final_ball_x": final_x,
+                "final_ball_y": final_y,
             },
             "outputs": {
                 "path": str(video_path),
