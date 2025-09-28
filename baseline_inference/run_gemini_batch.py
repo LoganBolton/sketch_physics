@@ -11,16 +11,16 @@ from typing import Any, Dict, List
 from google import genai
 from google.genai import types
 
-DEFAULT_PROMPT = """You are given the start frame of a physics simulation. A ball is dropped from the top of the screen and falls due to gravity. The ball can roll off the lines or the walls in the image. The bouncing of the ball is relatively minor and realistic for normal gravity. Nothing in the image will move besides the ball. Predict which bucket will eventually catch the ball. There are 4 different buckets called bucket 1, bucket 2, bucket 3, and bucket 4. It is also possible that the ball not fall into any of the buckets. 
+DEFAULT_PROMPT = """You are given the start frame of a physics simulation. A ball is dropped from the top of the screen and falls due to gravity. The ball can roll off the lines or the walls in the image. The bouncing of the ball is relatively minor and realistic for normal gravity. Nothing in the image will move besides the ball. Predict which bucket will eventually catch the ball. There are 4 different buckets called bucket 1, bucket 2, bucket 3, and bucket 4. It is also possible that the ball not fall into any of the buckets.
 
-Please respond with what bucket the ball will fall into. Your final answer should be formatted as "<answer>{bucket number or none}</answer>". For example, if the ball will fall into bucket 2, you should respond with "<answer>2</answer>". If the ball will not fall into any of the buckets, you should respond with "<answer>none</answer>"."""
+Please respond with what bucket the ball will fall into. Your final answer must be formatted as "$\\boxed{bucket number or none}$". For example, if the ball will fall into bucket 2, respond with "$\\boxed{4}$". If the ball will not fall into any bucket, respond with "$\\boxed{none}$"."""
 
 TIMESTAMP_FMT = "%Y%m%dT%H%M%SZ"
 
 
 def write_responses(path: Path, data: List[Dict[str, Any]]) -> None:
-    with path.open("w", encoding="utf-8") as fp:
-        json.dump(data, fp, indent=2)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
 
 def load_image_bytes(path: Path) -> bytes:
     with path.open("rb") as fp:

@@ -6,9 +6,11 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-ANSWER_PATTERN = re.compile(r"<answer>\s*\{([^}]*)\}\s*</answer>", re.IGNORECASE)
+# Support both the new <boxed>{value}</boxed> format and legacy LaTeX $\boxed{value}$.
+BOXED_TAG_PATTERN = re.compile(r"<boxed>\s*\{([^}]*)\}\s*</boxed>", re.IGNORECASE)
+LATEX_BOX_PATTERN = re.compile(r"\\boxed\{([^}]*)\}")
 METADATA_FILENAME = "random_scene_metadata.json"
 
 
@@ -23,24 +25,23 @@ class ParsedResponse:
 
 
 def parse_response_blocks(text: str) -> List[Dict[str, Any]]:
-    blocks: List[Dict[str, Any]] = []
+    """Parse plain-text response logs into structured dictionaries."""
+    blocks: List[str] = []
     lines = text.splitlines()
     if not lines:
-        return blocks
+        return []
 
-    current_chunk: List[str] = []
+    current: List[str] = []
     for line in lines:
-        if line.startswith("run_index:") and current_chunk:
-            chunk = "
-".join(current_chunk).strip()
+        if line.startswith("run_index:") and current:
+            chunk = "\n".join(current).strip()
             if chunk:
                 blocks.append(chunk)
-            current_chunk = [line]
+            current = [line]
         else:
-            current_chunk.append(line)
-    if current_chunk:
-        chunk = "
-".join(current_chunk).strip()
+            current.append(line)
+    if current:
+        chunk = "\n".join(current).strip()
         if chunk:
             blocks.append(chunk)
 
@@ -57,10 +58,10 @@ def parse_response_blocks(text: str) -> List[Dict[str, Any]]:
                 while idx < len(lines) and not lines[idx].startswith("error:"):
                     response_lines.append(lines[idx])
                     idx += 1
-                entry["response_text"] = "
-".join(response_lines).strip() if response_lines else None
+                entry["response_text"] = "\n".join(response_lines).strip() if response_lines else None
                 if idx < len(lines) and lines[idx].startswith("error:"):
-                    entry["error"] = lines[idx].split(": ", 1)[1].strip() if ": " in lines[idx] else lines[idx]
+                    error_line = lines[idx]
+                    entry["error"] = error_line.split(": ", 1)[1].strip() if ": " in error_line else error_line
                     idx += 1
                 continue
             if ": " in line:
@@ -71,9 +72,19 @@ def parse_response_blocks(text: str) -> List[Dict[str, Any]]:
     return parsed_blocks
 
 
-def parse_responses(path: Path) -> List[ParsedResponse]:
+def _load_raw_entries(path: Path) -> List[Dict[str, Any]]:
     text = path.read_text(encoding="utf-8")
-    raw_entries = parse_response_blocks(text)
+    try:
+        loaded = json.loads(text)
+        if isinstance(loaded, list):
+            return loaded
+    except json.JSONDecodeError:
+        pass
+    return parse_response_blocks(text)
+
+
+def parse_responses(path: Path) -> List[ParsedResponse]:
+    raw_entries = _load_raw_entries(path)
     parsed: List[ParsedResponse] = []
     for entry in raw_entries:
         run_index = entry.get("run_index")
@@ -83,11 +94,16 @@ def parse_responses(path: Path) -> List[ParsedResponse]:
             run_index = None
         run_dir_value = entry.get("run_dir")
         run_dir = Path(run_dir_value) if run_dir_value else None
-        metadata = {
-            k[len("metadata."):]: v
-            for k, v in entry.items()
-            if k.startswith("metadata.")
-        }
+        metadata: Dict[str, Any]
+        raw_metadata = entry.get("metadata")
+        if isinstance(raw_metadata, dict):
+            metadata = raw_metadata
+        else:
+            metadata = {
+                k[len("metadata."):]: v
+                for k, v in entry.items()
+                if isinstance(k, str) and k.startswith("metadata.")
+            }
         parsed.append(
             ParsedResponse(
                 run_index=run_index,
@@ -104,7 +120,9 @@ def parse_responses(path: Path) -> List[ParsedResponse]:
 def extract_answer(response_text: Optional[str]) -> Optional[str]:
     if not response_text:
         return None
-    match = ANSWER_PATTERN.search(response_text)
+    match = BOXED_TAG_PATTERN.search(response_text)
+    if not match:
+        match = LATEX_BOX_PATTERN.search(response_text)
     if not match:
         return None
     value = match.group(1).strip().strip("\"'").lower()
@@ -113,15 +131,17 @@ def extract_answer(response_text: Optional[str]) -> Optional[str]:
     return value
 
 
-def load_ground_truth(run_dir: Path) -> Optional[str]:
+def load_ground_truth_info(run_dir: Path) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[str]]:
     metadata_path = run_dir / METADATA_FILENAME
     if not metadata_path.exists():
-        return None
+        return None, None, None
     data = json.loads(metadata_path.read_text(encoding="utf-8"))
-    bucket_hit = data.get("simulation", {}).get("bucket_hit")
-    if bucket_hit is None:
-        return "none"
-    return str(bucket_hit)
+    simulation = data.get("simulation")
+    bucket_hit = None
+    if isinstance(simulation, dict):
+        bucket_hit = simulation.get("bucket_hit")
+    truth = "none" if bucket_hit is None else str(bucket_hit)
+    return truth, simulation, str(metadata_path)
 
 
 def compare_answers(predicted: Optional[str], truth: Optional[str]) -> Optional[bool]:
@@ -131,16 +151,38 @@ def compare_answers(predicted: Optional[str], truth: Optional[str]) -> Optional[
 
 
 def default_output_path(responses_path: Path) -> Path:
-    return responses_path.with_name(f"{responses_path.stem}_analysis.json")
+    parent = responses_path.parent
+    results_dir = parent.parent / "results" if parent.name == "responses" else parent / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    return results_dir / f"{responses_path.stem}_analysis.json"
 
 
 def analyze(responses_path: Path) -> Dict[str, Any]:
     parsed = parse_responses(responses_path)
     results: List[Dict[str, Any]] = []
+    summary = {
+        "total": 0,
+        "with_prediction": 0,
+        "correct": 0,
+        "incorrect": 0,
+        "unknown": 0,
+    }
+
     for item in parsed:
         predicted = extract_answer(item.response_text)
-        truth = load_ground_truth(item.run_dir) if item.run_dir else None
+        truth, simulation_details, metadata_path = load_ground_truth_info(item.run_dir) if item.run_dir else (None, None, None)
         correct = compare_answers(predicted, truth)
+
+        summary["total"] += 1
+        if predicted is not None:
+            summary["with_prediction"] += 1
+        else:
+            summary["unknown"] += 1
+        if correct is True:
+            summary["correct"] += 1
+        elif correct is False:
+            summary["incorrect"] += 1
+
         results.append(
             {
                 "run_index": item.run_index,
@@ -151,9 +193,23 @@ def analyze(responses_path: Path) -> Dict[str, Any]:
                 "correct": correct,
                 "error": item.error,
                 "metadata": item.metadata or None,
+                "ground_truth_file": metadata_path,
+                "simulation": simulation_details,
             }
         )
-    return {"responses_file": str(responses_path), "results": results}
+
+    accuracy = None
+    if summary["with_prediction"]:
+        accuracy = summary["correct"] / summary["with_prediction"]
+
+    return {
+        "responses_file": str(responses_path),
+        "summary": {
+            **summary,
+            "accuracy": accuracy,
+        },
+        "results": results,
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
