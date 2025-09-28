@@ -93,6 +93,7 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
     # Random static bars.
     safe_height = creator.scene.height - 80
     max_bar_width = creator.scene.width / 1.75
+    bars_created = 0
     for _ in range(max(0, args.num_bars)):
         width = random.uniform(40, max_bar_width)
         height = 3
@@ -107,6 +108,7 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
         cy = random.uniform(min_cy, max_cy)
         bar.set_center(cx, cy).set_angle(angle)
         bar.set_color("black")
+        bars_created += 1
 
     # Random polygons.
     for _ in range(max(0, args.num_polys)):
@@ -142,7 +144,7 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
     )
     creator.set_meta(creator.SolutionTier.GENERAL)
 
-    return creator, bucket_centers, bucket_top
+    return creator, bucket_centers, bucket_top, bars_created, (ball_x, ball_y)
 
 
 def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> Tuple[List[float], float]:
@@ -203,7 +205,7 @@ def main(args: argparse.Namespace) -> None:
         run_args = argparse.Namespace(**vars(args))
         run_args.seed = run_seed
 
-        creator, bucket_centers, bucket_top = _build_random_scene(run_args)
+        creator, bucket_centers, bucket_top, line_count, ball_start = _build_random_scene(run_args)
 
         scene_frames = simulator.simulate_scene(creator.scene, args.steps)
 
@@ -267,8 +269,24 @@ def main(args: argparse.Namespace) -> None:
                     bucket_hit = idx
                     break
 
+        simulation_info = {
+            "steps_requested": args.steps,
+            "frames_recorded": num_frames,
+            "frame_stride": stride,
+            "requested_fps": fps,
+            "playback_speedup": speed,
+            "effective_fps": effective_fps,
+            "num_lines": line_count,
+            "start_ball_x": ball_start[0],
+            "start_ball_y": ball_start[1],
+            "final_ball_x": final_x,
+            "final_ball_y": final_y,
+            "bucket_hit": bucket_hit,
+            "solved": None,
+        }
+
         metadata = {
-            "seed": run_seed,
+            "simulation": simulation_info,
             "scene": {
                 "width": creator.scene.width,
                 "height": creator.scene.height,
@@ -279,18 +297,7 @@ def main(args: argparse.Namespace) -> None:
                     for i, center in enumerate(bucket_centers)
                 ],
             },
-            "simulation": {
-                "steps_requested": args.steps,
-                "frames_recorded": num_frames,
-                "frame_stride": stride,
-                "requested_fps": fps,
-                "playback_speedup": speed,
-                "effective_fps": effective_fps,
-                "solved": None,
-                "bucket_hit": bucket_hit,
-                "final_ball_x": final_x,
-                "final_ball_y": final_y,
-            },
+            "seed": run_seed,
             "outputs": {
                 "path": str(video_path),
                 "format": args.video_format,
