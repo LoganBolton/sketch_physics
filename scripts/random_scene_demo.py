@@ -127,13 +127,10 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
 
     # Dynamic ball near the top.
     ball = creator.add("dynamic ball", scale=args.ball_radius)
-    unsafe_centers = sorted(bucket_centers)
     bucket_width = creator.scene.width / max(1, len(bucket_centers))
-    exclusion_radius = bucket_width * 0.25
-    while True:
-        ball_x = random.uniform(30, creator.scene.width - 30)
-        if not any(abs(ball_x - center) < exclusion_radius for center in unsafe_centers):
-            break
+    center = random.choice(bucket_centers)
+    offset = random.uniform(-0.3 * bucket_width, 0.3 * bucket_width)
+    ball_x = _clamp(center + offset, 30, creator.scene.width - 30)
     ball_y = creator.scene.height - 20
     ball.set_center(ball_x, ball_y)
     ball.set_color("blue")
