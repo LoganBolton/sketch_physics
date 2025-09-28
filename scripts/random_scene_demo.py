@@ -81,7 +81,7 @@ def _clamp(value: float, min_value: float, max_value: float) -> float:
     return max(min_value, min(max_value, value))
 
 
-def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreator, List[float], float]:
+def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreator, List[float], float, int, Tuple[float, float]]:
     if args.seed is not None:
         random.seed(args.seed)
         np.random.seed(args.seed)
@@ -92,13 +92,13 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
 
     # Random static bars.
     safe_height = creator.scene.height - 80
-    max_bar_width = creator.scene.width / 3
+    max_bar_width = creator.scene.width / 1.75
     for _ in range(max(0, args.num_bars)):
-        width = random.uniform(30, max_bar_width)
-        height = random.uniform(4, 10)
+        width = random.uniform(40, max_bar_width)
+        height = 3
         bar = creator.add_box(width=width, height=height, dynamic=False)
         cx = random.uniform(width / 2 + 10, creator.scene.width - width / 2 - 10)
-        angle = random.uniform(-60, 60)
+        angle = random.uniform(-80, 80)
         angle_rad = math.radians(angle)
         vertical_extent = (abs(width / 2 * math.sin(angle_rad)) +
                            abs(height / 2 * math.cos(angle_rad)))
