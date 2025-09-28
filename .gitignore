@@ -31,3 +31,4 @@ last_user_input.txt
 website/i18n/
 website/node_modules/
 website/yarn.lock
+output/
