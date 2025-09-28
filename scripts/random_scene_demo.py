@@ -98,8 +98,13 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
         height = random.uniform(4, 10)
         bar = creator.add_box(width=width, height=height, dynamic=False)
         cx = random.uniform(width / 2 + 10, creator.scene.width - width / 2 - 10)
-        cy = random.uniform(bucket_top + height / 2 + 10, safe_height)
         angle = random.uniform(-60, 60)
+        angle_rad = math.radians(angle)
+        vertical_extent = (abs(width / 2 * math.sin(angle_rad)) +
+                           abs(height / 2 * math.cos(angle_rad)))
+        min_cy = bucket_top + vertical_extent + 10
+        max_cy = max(min_cy + 1, safe_height)
+        cy = random.uniform(min_cy, max_cy)
         bar.set_center(cx, cy).set_angle(angle)
         bar.set_color("black")
 
