@@ -50,8 +50,10 @@ def parse_args() -> argparse.Namespace:
                         help="Number of physics steps to simulate (default: 500)")
     parser.add_argument("--num-bars", type=int, default=4,
                         help="Number of random static bars to add (default: 4)")
-    parser.add_argument("--num-polys", type=int, default=1,
-                        help="Number of random convex polygons to add (default: 1)")
+    parser.add_argument("--num-polys", type=int, default=0,
+                        help="Number of random convex polygons to add (default: 0)")
+    parser.add_argument("--runs", type=int, default=1,
+                        help="How many scenes to generate (default: 1)")
     parser.add_argument("--num-buckets", type=int, default=4,
                         help="Number of static buckets along the bottom (default: 4)")
     parser.add_argument("--ball-radius", type=float, default=0.1,
@@ -180,103 +182,112 @@ def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> Tuple[List[flo
     return centers, bucket_top
 
 def main(args: argparse.Namespace) -> None:
-    output_dir = args.output_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
+    base_output = args.output_dir
+    base_output.mkdir(parents=True, exist_ok=True)
 
-    creator, bucket_centers = _build_random_scene(args)
+    for run in range(1, args.runs + 1):
+        if args.runs > 1:
+            output_dir = base_output / f"run_{run:03d}"
+            output_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            output_dir = base_output
 
-    scene_frames = simulator.simulate_scene(creator.scene, args.steps)
+        run_seed = (args.seed + run - 1) if args.seed is not None else None
+        run_args = argparse.Namespace(**vars(args))
+        run_args.seed = run_seed
 
-    pixel_scale = max(args.pixel_scale, 1)
-    fps = max(args.fps, 1)
-    stride = max(args.frame_stride, 1)
-    speed = max(args.playback_speed, 0.01)
+        creator, bucket_centers = _build_random_scene(run_args)
 
-    trajectories = renderer._collect_trajectories(scene_frames)
-    label_specs = [(center, str(i + 1)) for i, center in enumerate(bucket_centers)]
-    frames, num_frames = renderer._generate_frames(
-        scene_frames,
-        scale=pixel_scale,
-        frame_stride=stride,
-        trajectories=trajectories,
-    )
+        scene_frames = simulator.simulate_scene(creator.scene, args.steps)
 
-    video_path, effective_fps = renderer._write_animation(
-        frames,
-        output_dir=output_dir,
-        fps=fps,
-        frame_stride=stride,
-        playback_speed=speed,
-        video_format=args.video_format,
-        pixel_scale=pixel_scale,
-        labels=label_specs,
-    )
+        pixel_scale = max(args.pixel_scale, 1)
+        fps = max(args.fps, 1)
+        stride = max(args.frame_stride, 1)
+        speed = max(args.playback_speed, 0.01)
 
-    if args.video_format == "gif":
-        desired_video = output_dir / "random_scene.gif"
-    else:
-        desired_video = output_dir / "random_scene.mp4"
-    if video_path != desired_video:
-        video_path.replace(desired_video)
-        video_path = desired_video
+        trajectories = renderer._collect_trajectories(scene_frames)
+        label_specs = [(center, str(i + 1)) for i, center in enumerate(bucket_centers)]
+        frames, num_frames = renderer._generate_frames(
+            scene_frames,
+            scale=pixel_scale,
+            frame_stride=stride,
+            trajectories=trajectories,
+        )
 
-    default_start = output_dir / "simple_scene_start.png"
-    default_final = output_dir / "simple_scene_final.png"
-    start_snapshot = output_dir / "random_scene_start.png"
-    final_snapshot = output_dir / "random_scene_final.png"
-    if default_start.exists():
-        default_start.replace(start_snapshot)
-    else:
-        start_snapshot = default_start
-    if default_final.exists():
-        default_final.replace(final_snapshot)
-    else:
-        final_snapshot = default_final
+        video_path, effective_fps = renderer._write_animation(
+            frames,
+            output_dir=output_dir,
+            fps=fps,
+            frame_stride=stride,
+            playback_speed=speed,
+            video_format=args.video_format,
+            pixel_scale=pixel_scale,
+            labels=label_specs,
+        )
 
-    metadata = {
-        "seed": args.seed,
-        "scene": {
-            "width": creator.scene.width,
-            "height": creator.scene.height,
-            "num_bodies": len(creator.scene.bodies),
-            "bodies": renderer._summarize_scene_bodies(creator.scene),
-            "buckets": [
-                {"index": i + 1, "center_x": center}
-                for i, center in enumerate(bucket_centers)
-            ],
-        },
-        "simulation": {
-            "steps_requested": args.steps,
-            "frames_recorded": num_frames,
-            "frame_stride": stride,
-            "requested_fps": fps,
-            "playback_speedup": speed,
-            "effective_fps": effective_fps,
-            "solved": None,
-        },
-        "outputs": {
-            "path": str(video_path),
-            "format": args.video_format,
-            "start_frame": str(start_snapshot),
-            "final_frame": str(final_snapshot),
-        },
-        "render": {
-            "pixel_scale": pixel_scale,
-        },
-        "trajectories": {
-            str(idx): [{"x": x, "y": y} for (x, y) in positions]
-            for idx, positions in trajectories.items()
-        },
-    }
+        desired_video = output_dir / ("random_scene.gif" if args.video_format == "gif" else "random_scene.mp4")
+        if video_path != desired_video:
+            video_path.replace(desired_video)
+            video_path = desired_video
 
-    metadata_path = output_dir / "random_scene_metadata.json"
-    with metadata_path.open("w", encoding="utf-8") as handle:
-        json.dump(metadata, handle, indent=2)
+        default_start = output_dir / "simple_scene_start.png"
+        default_final = output_dir / "simple_scene_final.png"
+        start_snapshot = output_dir / "random_scene_start.png"
+        final_snapshot = output_dir / "random_scene_final.png"
+        if default_start.exists():
+            default_start.replace(start_snapshot)
+        else:
+            start_snapshot = default_start
+        if default_final.exists():
+            default_final.replace(final_snapshot)
+        else:
+            final_snapshot = default_final
 
-    print("Scene metadata written to", metadata_path)
-    print("Animation written to", video_path)
-    print("Start frame saved to", start_snapshot)
-    print("Final frame saved to", final_snapshot)
+        metadata = {
+            "seed": run_seed,
+            "scene": {
+                "width": creator.scene.width,
+                "height": creator.scene.height,
+                "num_bodies": len(creator.scene.bodies),
+                "bodies": renderer._summarize_scene_bodies(creator.scene),
+                "buckets": [
+                    {"index": i + 1, "center_x": center}
+                    for i, center in enumerate(bucket_centers)
+                ],
+            },
+            "simulation": {
+                "steps_requested": args.steps,
+                "frames_recorded": num_frames,
+                "frame_stride": stride,
+                "requested_fps": fps,
+                "playback_speedup": speed,
+                "effective_fps": effective_fps,
+                "solved": None,
+            },
+            "outputs": {
+                "path": str(video_path),
+                "format": args.video_format,
+                "start_frame": str(start_snapshot),
+                "final_frame": str(final_snapshot),
+            },
+            "render": {
+                "pixel_scale": pixel_scale,
+            },
+            "trajectories": {
+                str(idx): [{"x": x, "y": y} for (x, y) in positions]
+                for idx, positions in trajectories.items()
+            },
+        }
+
+        metadata_path = output_dir / "random_scene_metadata.json"
+        with metadata_path.open("w", encoding="utf-8") as handle:
+            json.dump(metadata, handle, indent=2)
+
+        print(f"Run {run}/{args.runs}")
+        print("  Scene metadata written to", metadata_path)
+        print("  Animation written to", video_path)
+        print("  Start frame saved to", start_snapshot)
+        print("  Final frame saved to", final_snapshot)
 
 
 if __name__ == "__main__":
