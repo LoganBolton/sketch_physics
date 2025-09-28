@@ -122,7 +122,13 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
 
     # Dynamic ball near the top.
     ball = creator.add("dynamic ball", scale=args.ball_radius)
-    ball_x = random.uniform(30, creator.scene.width - 30)
+    unsafe_centers = sorted(bucket_centers)
+    bucket_width = creator.scene.width / max(1, len(bucket_centers))
+    exclusion_radius = bucket_width * 0.25
+    while True:
+        ball_x = random.uniform(30, creator.scene.width - 30)
+        if not any(abs(ball_x - center) < exclusion_radius for center in unsafe_centers):
+            break
     ball_y = creator.scene.height - 20
     ball.set_center(ball_x, ball_y)
     ball.set_color("blue")
@@ -140,7 +146,7 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
 def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> Tuple[List[float], float]:
     width = creator.scene.width
     bucket_width = width / count
-    wall_thickness = 6
+    wall_thickness = 3
     bucket_height = 60
     base_height = 6
 
@@ -157,25 +163,24 @@ def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> Tuple[List[flo
         base.set_center(center_x, base_height / 2)
         base.set_color("purple")
 
-        # Left wall (gray). Align with previous right wall if present.
-        left = creator.add_box(width=wall_thickness,
-                               height=bucket_height,
-                               dynamic=False)
-        left_x = center_x - (bucket_width / 2) + wall_thickness / 2
-        if last_right_x is not None:
-            left_x = last_right_x  # remove horizontal gap
-        left.set_center(left_x, bucket_height / 2 + base_height)
-        left.set_color("purple")
+        if i > 0:
+            left = creator.add_box(width=wall_thickness,
+                                   height=bucket_height,
+                                   dynamic=False)
+            left_x = center_x - (bucket_width / 2) + wall_thickness / 2
+            if last_right_x is not None:
+                left_x = last_right_x  # remove horizontal gap
+            left.set_center(left_x, bucket_height / 2 + base_height)
+            left.set_color("purple")
 
-        # Right wall (gray)
-        right = creator.add_box(width=wall_thickness,
-                                height=bucket_height,
-                                dynamic=False)
-        right_x = center_x + (bucket_width / 2) - wall_thickness / 2
-        right.set_center(right_x, bucket_height / 2 + base_height)
-        right.set_color("purple")
-
-        last_right_x = right_x
+        if i < count - 1:
+            right = creator.add_box(width=wall_thickness,
+                                    height=bucket_height,
+                                    dynamic=False)
+            right_x = center_x + (bucket_width / 2) - wall_thickness / 2
+            right.set_center(right_x, bucket_height / 2 + base_height)
+            right.set_color("purple")
+            last_right_x = right_x
         centers.append(center_x)
 
     bucket_top = bucket_height + base_height

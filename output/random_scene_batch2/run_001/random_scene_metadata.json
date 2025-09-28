@@ -816,10 +816,10 @@
     "solved": null
   },
   "outputs": {
-    "path": "output/random_scene_run/random_scene.gif",
+    "path": "output/random_scene_batch2/run_001/random_scene.gif",
     "format": "gif",
-    "start_frame": "output/random_scene_run/random_scene_start.png",
-    "final_frame": "output/random_scene_run/random_scene_final.png"
+    "start_frame": "output/random_scene_batch2/run_001/random_scene_start.png",
+    "final_frame": "output/random_scene_batch2/run_001/random_scene_final.png"
   },
   "render": {
     "pixel_scale": 3
