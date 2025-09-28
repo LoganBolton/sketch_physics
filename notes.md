@@ -28,14 +28,16 @@ Note: MP4 output requires `pip install imageio-ffmpeg` so the FFmpeg writer is a
 ## Random Scene Generator
 ```
 python scripts/random_scene_demo.py \
-    --seed 42 \
-    --pixel-scale 3 \
-    --frame-stride 2 \
-    --playback-speed 12 \
-    --steps 360 \
-    --num-bars 4 \
-    --num-polys 2 \
-    --output-dir output/random_scene_run
+      --seed 42 \
+      --pixel-scale 3 \
+      --frame-stride 2 \
+      --playback-speed 12 \
+      --steps 800 \
+      --num-bars 4 \
+      --num-polys 0 \
+      --num-buckets 4 \
+      --runs 10 \ 
+      --output-dir output/random_scene_batch13
 ```
 
 - Both scripts now emit `*_start.png` and `*_final.png` snapshots with trajectory overlays.

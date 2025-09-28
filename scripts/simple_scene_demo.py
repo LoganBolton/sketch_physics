@@ -33,7 +33,6 @@ from phyre.interface.scene import ttypes as scene_if
 
 
 OUTPUT_DIR = pathlib.Path("output/simple_scene")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _body_shape_summary(body) -> Dict[str, object]:
@@ -139,7 +138,7 @@ def _draw_polyline(image: np.ndarray, points: List[Tuple[int, int]], color: Tupl
 
 DIGITS = {
     "0": ["###", "# #", "# #", "# #", "###"],
-    "1": [" ##", "  #", "  #", "  #", "###"],
+    "1": ["  #", " ##", "  #", "  #", "  #"],
     "2": ["###", "  #", "###", "#  ", "###"],
     "3": ["###", "  #", "###", "  #", "###"],
     "4": ["# #", "# #", "###", "  #", "  #"],

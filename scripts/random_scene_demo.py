@@ -30,7 +30,6 @@ from phyre.interface.scene import ttypes as scene_if  # noqa: E402
 import simple_scene_demo as renderer  # noqa: E402
 
 OUTPUT_DIR = pathlib.Path("output/random_scene")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def parse_args() -> argparse.Namespace:
