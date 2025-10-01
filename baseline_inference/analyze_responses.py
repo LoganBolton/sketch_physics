@@ -6,6 +6,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+import sys
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 # Support both the new <boxed>{value}</boxed> format and legacy LaTeX $\boxed{value}$.
@@ -230,7 +231,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[Iterable[str]] = None) -> None:
     parser = build_parser()
-    args = parser.parse_args(argv)
+
+    if argv is None:
+        argv = sys.argv[1:]
+
+    if not argv:
+        responses_path = input("Enter path to responses JSON: ").strip()
+        if not responses_path:
+            raise SystemExit("A responses file path is required.")
+        args = parser.parse_args([responses_path])
+    else:
+        args = parser.parse_args(argv)
 
     analysis = analyze(args.responses_file)
     output_path = args.output_json or default_output_path(args.responses_file)

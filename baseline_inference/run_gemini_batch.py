@@ -83,7 +83,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model-name",
         type=str,
-        default="gemini-2.5-flash",
+        default="gemini-2.5-pro",
         help="Gemini model identifier",
     )
     parser.add_argument(
@@ -121,7 +121,7 @@ def main() -> None:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime(TIMESTAMP_FMT)
-    output_path = args.output_dir / f"gemini_responses_{timestamp}.json"
+    output_path = args.output_dir / f"{args.model_name}_responses_{timestamp}.json"
 
     for idx, run_dir in enumerate(subset, start=1):
         try:
