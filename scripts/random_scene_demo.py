@@ -96,6 +96,20 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
 
     bucket_centers, bucket_top = _add_buckets(creator, max(1, args.num_buckets))
 
+    # Add thin side walls to prevent ball from bouncing out
+    wall_thickness = 2  # Very thin, barely visible
+    wall_height = creator.scene.height
+
+    # Left wall
+    left_wall = creator.add_box(width=wall_thickness, height=wall_height, dynamic=False)
+    left_wall.set_center(wall_thickness / 2, wall_height / 2)
+    left_wall.set_color("black")
+
+    # Right wall
+    right_wall = creator.add_box(width=wall_thickness, height=wall_height, dynamic=False)
+    right_wall.set_center(creator.scene.width - wall_thickness / 2, wall_height / 2)
+    right_wall.set_color("black")
+
     # Determine number of bars: cycle through 1, 2, 3 based on run number
     if hasattr(args, 'run_number'):
         num_bars = ((args.run_number - 1) % 3) + 1
@@ -371,14 +385,23 @@ def main(args: argparse.Namespace) -> None:
     base_output = args.output_dir
     base_output.mkdir(parents=True, exist_ok=True)
 
-    print(f"Starting parallel generation of {args.runs} runs...")
+    # Limit the number of parallel processes to avoid memory issues
+    # Use at most 6 processes or the number of CPU cores, whichever is smaller
+    num_processes = min(6, multiprocessing.cpu_count())
 
-    # Use multiprocessing to run all scenes in parallel
-    with multiprocessing.Pool() as pool:
-        pool.starmap(
-            _process_single_run,
-            [(run, args, base_output) for run in range(1, args.runs + 1)]
-        )
+    print(f"Starting parallel generation of {args.runs} runs using {num_processes} processes...")
+
+    # Use multiprocessing with a limited pool size and process in chunks
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        # Process runs in chunks to avoid memory buildup
+        chunk_size = num_processes
+        for i in range(0, args.runs, chunk_size):
+            chunk_runs = range(i + 1, min(i + chunk_size + 1, args.runs + 1))
+            pool.starmap(
+                _process_single_run,
+                [(run, args, base_output) for run in chunk_runs]
+            )
+            print(f"Completed {min(i + chunk_size, args.runs)}/{args.runs} runs")
 
     print(f"\nAll {args.runs} runs completed!")
 
