@@ -140,16 +140,31 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
         selected_sections = height_sections  # Use all three
 
     # Random static bars in designated sections
-    max_bar_width = creator.scene.width * 0.7
-    min_bar_width = creator.scene.width * 0.3
-    
+    # Add horizontal margins to shrink the available width for lines
+    horizontal_margin = 60  # 60 pixels margin on each side
+    available_width = creator.scene.width - 2 * horizontal_margin
+
+    max_bar_width = available_width * 0.8
+    min_bar_width = available_width * 0.5
+    MAX_ANGLE = 20
+    MIN_ANGLE = 5
+
     bars_created = 0
     for min_cy, max_cy in selected_sections:
         width = random.uniform(min_bar_width, max_bar_width)
         height = 4
         bar = creator.add_box(width=width, height=height, dynamic=False)
-        cx = random.uniform(width / 2 + 10, creator.scene.width - width / 2 - 10)
-        angle = random.uniform(-20, 20)
+
+        # Position bar center within the available width (accounting for margins)
+        min_cx = horizontal_margin + width / 2
+        max_cx = creator.scene.width - horizontal_margin - width / 2
+        cx = random.uniform(min_cx, max_cx)
+
+        # Avoid near-horizontal angles: use either [5, 20] or [-20, -5]
+        if random.random() < 0.5:
+            angle = random.uniform(MIN_ANGLE, MAX_ANGLE)
+        else:
+            angle = random.uniform(-MAX_ANGLE, -MIN_ANGLE)
 
         # Calculate vertical extent and ensure bar fits in section
         angle_rad = math.radians(angle)
