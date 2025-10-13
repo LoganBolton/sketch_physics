@@ -139,7 +139,7 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
     # Select which sections to use based on number of bars
     # Reverse order so top line is processed first (for ball placement)
     if num_bars == 1:
-        selected_sections = [height_sections[1]]  # Use middle section
+        selected_sections = [random.choice(height_sections)]  # Random section
     elif num_bars == 2:
         selected_sections = [height_sections[2], height_sections[0]]  # Top first, then bottom
     else:  # num_bars == 3
