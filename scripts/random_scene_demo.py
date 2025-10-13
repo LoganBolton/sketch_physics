@@ -46,7 +46,7 @@ def parse_args() -> argparse.Namespace:
                         help="Keep every Nth physics frame (default: 2)")
     parser.add_argument("--playback-speed", type=float, default=10.0,
                         help="Playback speed multiplier (default: 10)")
-    parser.add_argument("--steps", type=int, default=1000,
+    parser.add_argument("--steps", type=int, default=1500,
                         help="Number of physics steps to simulate (default: 500)")
     parser.add_argument("--num-bars", type=int, default=4,
                         help="Number of random static bars to add (default: 4)")
@@ -132,12 +132,13 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
     ]
 
     # Select which sections to use based on number of bars
+    # Reverse order so top line is processed first (for ball placement)
     if num_bars == 1:
         selected_sections = [height_sections[1]]  # Use middle section
     elif num_bars == 2:
-        selected_sections = [height_sections[0], height_sections[2]]  # Use bottom and top
+        selected_sections = [height_sections[2], height_sections[0]]  # Top first, then bottom
     else:  # num_bars == 3
-        selected_sections = height_sections  # Use all three
+        selected_sections = [height_sections[2], height_sections[1], height_sections[0]]  # Top to bottom
 
     # Random static bars in designated sections
     # Add horizontal margins to shrink the available width for lines
@@ -151,6 +152,7 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
 
     bars_created = 0
     previous_angle = None  # Track the previous bar's angle for sequential placement
+    first_bar_cx = None  # Track the first bar's x position for ball placement
 
     for section_idx, (min_cy, max_cy) in enumerate(selected_sections):
         width = random.uniform(min_bar_width, max_bar_width)
@@ -201,6 +203,10 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
         bars_created += 1
         previous_angle = angle  # Store for next iteration
 
+        # Store first bar's x position for ball placement
+        if section_idx == 0:
+            first_bar_cx = cx
+
     # Random polygons.
     for _ in range(max(0, args.num_polys)):
         num_vertices = random.randint(3, 6)
@@ -218,18 +224,14 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
         polygon = creator.add_convex_polygon(vertices, dynamic=False)
         polygon.set_color("black")
 
-    # Dynamic ball near the top with normal distribution centered in the middle
+    # Dynamic ball positioned above the center of the first line
     ball = creator.add("dynamic ball", scale=args.ball_radius)
 
-    # Use normal distribution centered at the middle of the scene
-    scene_center_x = creator.scene.width / 2
-    # Standard deviation is ~1/6 of the width so ~99.7% of values fall within the scene
-    std_dev = creator.scene.width / 6
+    # Position ball at the x-coordinate of the first bar's center
+    ball_x = first_bar_cx
 
-    # Sample from normal distribution and clamp to valid range
-    ball_x = np.random.normal(scene_center_x, std_dev)
+    # make sure ball is within the scene
     ball_x = _clamp(ball_x, 30, creator.scene.width - 30)
-
     ball_y = creator.scene.height - 20
     ball.set_center(ball_x, ball_y)
     ball.set_color("blue")
