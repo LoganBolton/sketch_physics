@@ -394,6 +394,35 @@ def _process_single_run(run: int, args: argparse.Namespace, base_output: pathlib
                 bucket_hit = idx
                 break
 
+    # Detect if ball bounced on bucket wall
+    # Bounces happen near bucket_top level (around y=60-80)
+    ball_trajectory = trajectories[ball_index]
+    bucket_wall_region_min = bucket_top - 10  # Slightly below bucket top
+    bucket_wall_region_max = bucket_top + 30  # Slightly above bucket top
+    bounce_detected = False
+    max_bounce_height = 0
+
+    # Look for local minima in the bucket wall region followed by upward bounces
+    # Check each point in the trajectory for a bounce pattern
+    for i in range(10, len(ball_trajectory) - 10):
+        curr_y = ball_trajectory[i][1]
+
+        # Only check if we're in the bucket wall region
+        if bucket_wall_region_min <= curr_y <= bucket_wall_region_max:
+            # Look back and forward a few steps to detect local minimum
+            prev_y = ball_trajectory[i-5][1]
+            next_y = ball_trajectory[i+5][1]
+
+            # Check if current point is a local minimum (going down then up)
+            if prev_y > curr_y and next_y > curr_y:
+                bounce_height = next_y - curr_y
+
+                # If it bounces up by more than 1 pixel, consider it a bounce
+                if bounce_height > 1:
+                    bounce_detected = True
+                    max_bounce_height = max(max_bounce_height, bounce_height)
+                    break  # Found a bounce, no need to check further
+
     simulation_info = {
         "steps_requested": args.steps,
         "frames_recorded": num_frames,
@@ -407,6 +436,8 @@ def _process_single_run(run: int, args: argparse.Namespace, base_output: pathlib
         "final_ball_x": final_x,
         "final_ball_y": final_y,
         "bucket_hit": bucket_hit,
+        "bounce_detected": bounce_detected,
+        "max_bounce_height": max_bounce_height,
         "solved": None,
     }
 

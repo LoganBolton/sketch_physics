@@ -38,13 +38,17 @@ def main():
             metadata = json.load(f)
 
         bucket_hit = metadata.get("simulation", {}).get("bucket_hit")
-        if bucket_hit is not None:
+        bounce_detected = metadata.get("simulation", {}).get("bounce_detected")
+        if bucket_hit is not None and not bounce_detected:
             new_run_dir = target_dir / run_dir.name
+            # Remove existing directory if it exists
+            if new_run_dir.exists():
+                shutil.rmtree(new_run_dir)
             shutil.copytree(run_dir, new_run_dir)
             print(f"Copied {run_dir.name} (bucket {bucket_hit})")
             copied += 1
         else:
-            skipped += 1
+            skipped += 1is
 
     print(f"\nCopied {copied} scenes with bucket hits")
     print(f"Skipped {skipped} scenes without bucket hits")
