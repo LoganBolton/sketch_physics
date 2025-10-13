@@ -150,21 +150,37 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
     MIN_ANGLE = 5
 
     bars_created = 0
-    for min_cy, max_cy in selected_sections:
+    previous_angle = None  # Track the previous bar's angle for sequential placement
+
+    for section_idx, (min_cy, max_cy) in enumerate(selected_sections):
         width = random.uniform(min_bar_width, max_bar_width)
         height = 4
         bar = creator.add_box(width=width, height=height, dynamic=False)
 
-        # Position bar center within the available width (accounting for margins)
+        # Determine angle and position based on whether this is the first bar
         min_cx = horizontal_margin + width / 2
         max_cx = creator.scene.width - horizontal_margin - width / 2
-        cx = random.uniform(min_cx, max_cx)
+        scene_third = available_width / 3
 
-        # Avoid near-horizontal angles: use either [5, 20] or [-20, -5]
-        if random.random() < 0.5:
-            angle = random.uniform(MIN_ANGLE, MAX_ANGLE)
+        if section_idx == 0:
+            # First bar: random angle and position
+            if random.random() < 0.5:
+                angle = random.uniform(MIN_ANGLE, MAX_ANGLE)
+            else:
+                angle = random.uniform(-MAX_ANGLE, -MIN_ANGLE)
+            cx = random.uniform(min_cx, max_cx)
         else:
-            angle = random.uniform(-MAX_ANGLE, -MIN_ANGLE)
+            # Subsequent bars: angle opposite to previous, position based on deflection
+            # If previous angle was positive (tilts right), ball deflects left
+            # If previous angle was negative (tilts left), ball deflects right
+            if previous_angle > 0:
+                # Previous bar tilted right -> ball deflects left -> negative angle on left side
+                angle = random.uniform(-MAX_ANGLE, -MIN_ANGLE)
+                cx = random.uniform(min_cx, horizontal_margin + scene_third - width / 2)
+            else:
+                # Previous bar tilted left -> ball deflects right -> positive angle on right side
+                angle = random.uniform(MIN_ANGLE, MAX_ANGLE)
+                cx = random.uniform(horizontal_margin + 2 * scene_third + width / 2, max_cx)
 
         # Calculate vertical extent and ensure bar fits in section
         angle_rad = math.radians(angle)
@@ -183,6 +199,7 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
         bar.set_center(cx, cy).set_angle(angle)
         bar.set_color("black")
         bars_created += 1
+        previous_angle = angle  # Store for next iteration
 
     # Random polygons.
     for _ in range(max(0, args.num_polys)):
