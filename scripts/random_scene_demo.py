@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import multiprocessing
 import pathlib
 import random
 import sys
@@ -45,7 +46,7 @@ def parse_args() -> argparse.Namespace:
                         help="Keep every Nth physics frame (default: 2)")
     parser.add_argument("--playback-speed", type=float, default=10.0,
                         help="Playback speed multiplier (default: 10)")
-    parser.add_argument("--steps", type=int, default=500,
+    parser.add_argument("--steps", type=int, default=1000,
                         help="Number of physics steps to simulate (default: 500)")
     parser.add_argument("--num-bars", type=int, default=4,
                         help="Number of random static bars to add (default: 4)")
@@ -95,22 +96,61 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
 
     bucket_centers, bucket_top = _add_buckets(creator, max(1, args.num_buckets))
 
-    # Random static bars.
-    safe_height = creator.scene.height - 80
-    max_bar_width = creator.scene.width / 1.7
+    # Determine number of bars: cycle through 1, 2, 3 based on run number
+    if hasattr(args, 'run_number'):
+        num_bars = ((args.run_number - 1) % 3) + 1
+    else:
+        num_bars = random.choice([1, 2, 3])
+
+    # Divide the space above buckets into 3 vertical sections
+    scene_height = creator.scene.height
+    available_height = scene_height - bucket_top
+    section_height = available_height / 3
+
+    # Define height ranges for each bar (from bottom to top)
+    # Bottom section: just above buckets
+    # Middle section: middle third
+    # Top section: top third
+    height_sections = [
+        (bucket_top + 20, bucket_top + section_height - 20),           # Bottom section
+        (bucket_top + section_height + 20, bucket_top + 2 * section_height - 20),  # Middle section
+        (bucket_top + 2 * section_height + 20, scene_height - 40),     # Top section
+    ]
+
+    # Select which sections to use based on number of bars
+    if num_bars == 1:
+        selected_sections = [height_sections[1]]  # Use middle section
+    elif num_bars == 2:
+        selected_sections = [height_sections[0], height_sections[2]]  # Use bottom and top
+    else:  # num_bars == 3
+        selected_sections = height_sections  # Use all three
+
+    # Random static bars in designated sections
+    max_bar_width = creator.scene.width * 0.7
+    min_bar_width = creator.scene.width * 0.3
+    
     bars_created = 0
-    for _ in range(max(0, args.num_bars)):
-        width = random.uniform(40, max_bar_width)
-        height = 3
+    for min_cy, max_cy in selected_sections:
+        width = random.uniform(min_bar_width, max_bar_width)
+        height = 4
         bar = creator.add_box(width=width, height=height, dynamic=False)
         cx = random.uniform(width / 2 + 10, creator.scene.width - width / 2 - 10)
-        angle = random.uniform(-30, 30)
+        angle = random.uniform(-20, 20)
+
+        # Calculate vertical extent and ensure bar fits in section
         angle_rad = math.radians(angle)
         vertical_extent = (abs(width / 2 * math.sin(angle_rad)) +
                            abs(height / 2 * math.cos(angle_rad)))
-        min_cy = bucket_top + vertical_extent + 10
-        max_cy = max(min_cy + 1, safe_height)
-        cy = random.uniform(min_cy, max_cy)
+
+        # Adjust bounds to account for rotation
+        adjusted_min = min_cy + vertical_extent
+        adjusted_max = max_cy - vertical_extent
+
+        if adjusted_max > adjusted_min:
+            cy = random.uniform(adjusted_min, adjusted_max)
+        else:
+            cy = (min_cy + max_cy) / 2
+
         bar.set_center(cx, cy).set_angle(angle)
         bar.set_color("black")
         bars_created += 1
@@ -165,8 +205,6 @@ def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> Tuple[List[flo
     for i in range(count):
         center_x = (i + 0.5) * bucket_width
 
-        # Base removed - no longer needed
-
         if i > 0:
             left = creator.add_box(width=wall_thickness,
                                    height=bucket_height,
@@ -190,138 +228,153 @@ def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> Tuple[List[flo
     bucket_top = bucket_height
     return centers, bucket_top
 
+
+def _process_single_run(run: int, args: argparse.Namespace, base_output: pathlib.Path) -> None:
+    """Process a single run - designed to be called in parallel."""
+    if args.runs > 1:
+        output_dir = base_output / f"run_{run:03d}"
+    else:
+        output_dir = base_output
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    run_seed = (args.seed + run - 1) if args.seed is not None else None
+    run_args = argparse.Namespace(**vars(args))
+    run_args.seed = run_seed
+    run_args.run_number = run
+
+    creator, bucket_centers, bucket_top, line_count, ball_start = _build_random_scene(run_args)
+
+    scene_frames = simulator.simulate_scene(creator.scene, args.steps)
+
+    pixel_scale = max(args.pixel_scale, 1)
+    fps = max(args.fps, 1)
+    stride = max(args.frame_stride, 1)
+    speed = max(args.playback_speed, 0.01)
+
+    trajectories = renderer._collect_trajectories(scene_frames)
+    label_specs = [(center, str(i + 1)) for i, center in enumerate(bucket_centers)]
+    frames, num_frames = renderer._generate_frames(
+        scene_frames,
+        scale=pixel_scale,
+        frame_stride=stride,
+        trajectories=trajectories,
+    )
+
+    video_path, effective_fps = renderer._write_animation(
+        frames,
+        output_dir=output_dir,
+        fps=fps,
+        frame_stride=stride,
+        playback_speed=speed,
+        video_format=args.video_format,
+        pixel_scale=pixel_scale,
+        labels=label_specs,
+    )
+
+    desired_video = output_dir / ("random_scene.gif" if args.video_format == "gif" else "random_scene.mp4")
+    if video_path != desired_video:
+        video_path.replace(desired_video)
+        video_path = desired_video
+
+    default_start = output_dir / "simple_scene_start.png"
+    default_final = output_dir / "simple_scene_final.png"
+    start_snapshot = output_dir / "random_scene_start.png"
+    final_snapshot = output_dir / "random_scene_final.png"
+    if default_start.exists():
+        default_start.replace(start_snapshot)
+    else:
+        start_snapshot = default_start
+    if default_final.exists():
+        default_final.replace(final_snapshot)
+    else:
+        final_snapshot = default_final
+
+    body_summaries = renderer._summarize_scene_bodies(creator.scene)
+    bucket_width = creator.scene.width / max(1, len(bucket_centers))
+    bucket_left_edges = [center - bucket_width / 2 for center in bucket_centers]
+    bucket_right_edges = [center + bucket_width / 2 for center in bucket_centers]
+    ball_index = next(
+        idx for idx, body in enumerate(body_summaries)
+        if body["bodyType"] == "DYNAMIC"
+    )
+    final_x, final_y = trajectories[ball_index][-1]
+    ball_radius = creator.scene.bodies[ball_index].shapes[0].circle.radius
+    bucket_hit = None
+    if final_y + ball_radius <= bucket_top:
+        for idx, (left, right) in enumerate(zip(bucket_left_edges, bucket_right_edges), start=1):
+            if left + ball_radius <= final_x <= right - ball_radius:
+                bucket_hit = idx
+                break
+
+    simulation_info = {
+        "steps_requested": args.steps,
+        "frames_recorded": num_frames,
+        "frame_stride": stride,
+        "requested_fps": fps,
+        "playback_speedup": speed,
+        "effective_fps": effective_fps,
+        "num_lines": line_count,
+        "start_ball_x": ball_start[0],
+        "start_ball_y": ball_start[1],
+        "final_ball_x": final_x,
+        "final_ball_y": final_y,
+        "bucket_hit": bucket_hit,
+        "solved": None,
+    }
+
+    metadata = {
+        "simulation": simulation_info,
+        "scene": {
+            "width": creator.scene.width,
+            "height": creator.scene.height,
+            "num_bodies": len(creator.scene.bodies),
+            "bodies": body_summaries,
+            "buckets": [
+                {"index": i + 1, "center_x": center}
+                for i, center in enumerate(bucket_centers)
+            ],
+        },
+        "seed": run_seed,
+        "outputs": {
+            "path": str(video_path),
+            "format": args.video_format,
+            "start_frame": str(start_snapshot),
+            "final_frame": str(final_snapshot),
+        },
+        "render": {
+            "pixel_scale": pixel_scale,
+        },
+        "trajectories": {
+            str(idx): [{"x": x, "y": y} for (x, y) in positions]
+            for idx, positions in trajectories.items()
+        },
+    }
+
+    metadata_path = output_dir / "random_scene_metadata.json"
+    with metadata_path.open("w", encoding="utf-8") as handle:
+        json.dump(metadata, handle, indent=2)
+
+    print(f"Run {run}/{args.runs} completed")
+    print(f"  Scene metadata written to {metadata_path}")
+    print(f"  Animation written to {video_path}")
+    print(f"  Start frame saved to {start_snapshot}")
+    print(f"  Final frame saved to {final_snapshot}")
+
+
 def main(args: argparse.Namespace) -> None:
     base_output = args.output_dir
     base_output.mkdir(parents=True, exist_ok=True)
 
-    for run in range(1, args.runs + 1):
-        if args.runs > 1:
-            output_dir = base_output / f"run_{run:03d}"
-        else:
-            output_dir = base_output
-        output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Starting parallel generation of {args.runs} runs...")
 
-        run_seed = (args.seed + run - 1) if args.seed is not None else None
-        run_args = argparse.Namespace(**vars(args))
-        run_args.seed = run_seed
-
-        creator, bucket_centers, bucket_top, line_count, ball_start = _build_random_scene(run_args)
-
-        scene_frames = simulator.simulate_scene(creator.scene, args.steps)
-
-        pixel_scale = max(args.pixel_scale, 1)
-        fps = max(args.fps, 1)
-        stride = max(args.frame_stride, 1)
-        speed = max(args.playback_speed, 0.01)
-
-        trajectories = renderer._collect_trajectories(scene_frames)
-        label_specs = [(center, str(i + 1)) for i, center in enumerate(bucket_centers)]
-        frames, num_frames = renderer._generate_frames(
-            scene_frames,
-            scale=pixel_scale,
-            frame_stride=stride,
-            trajectories=trajectories,
+    # Use multiprocessing to run all scenes in parallel
+    with multiprocessing.Pool() as pool:
+        pool.starmap(
+            _process_single_run,
+            [(run, args, base_output) for run in range(1, args.runs + 1)]
         )
 
-        video_path, effective_fps = renderer._write_animation(
-            frames,
-            output_dir=output_dir,
-            fps=fps,
-            frame_stride=stride,
-            playback_speed=speed,
-            video_format=args.video_format,
-            pixel_scale=pixel_scale,
-            labels=label_specs,
-        )
-
-        desired_video = output_dir / ("random_scene.gif" if args.video_format == "gif" else "random_scene.mp4")
-        if video_path != desired_video:
-            video_path.replace(desired_video)
-            video_path = desired_video
-
-        default_start = output_dir / "simple_scene_start.png"
-        default_final = output_dir / "simple_scene_final.png"
-        start_snapshot = output_dir / "random_scene_start.png"
-        final_snapshot = output_dir / "random_scene_final.png"
-        if default_start.exists():
-            default_start.replace(start_snapshot)
-        else:
-            start_snapshot = default_start
-        if default_final.exists():
-            default_final.replace(final_snapshot)
-        else:
-            final_snapshot = default_final
-
-        body_summaries = renderer._summarize_scene_bodies(creator.scene)
-        bucket_width = creator.scene.width / max(1, len(bucket_centers))
-        bucket_left_edges = [center - bucket_width / 2 for center in bucket_centers]
-        bucket_right_edges = [center + bucket_width / 2 for center in bucket_centers]
-        ball_index = next(
-            idx for idx, body in enumerate(body_summaries)
-            if body["bodyType"] == "DYNAMIC"
-        )
-        final_x, final_y = trajectories[ball_index][-1]
-        ball_radius = creator.scene.bodies[ball_index].shapes[0].circle.radius
-        bucket_hit = None
-        if final_y + ball_radius <= bucket_top:
-            for idx, (left, right) in enumerate(zip(bucket_left_edges, bucket_right_edges), start=1):
-                if left + ball_radius <= final_x <= right - ball_radius:
-                    bucket_hit = idx
-                    break
-
-        simulation_info = {
-            "steps_requested": args.steps,
-            "frames_recorded": num_frames,
-            "frame_stride": stride,
-            "requested_fps": fps,
-            "playback_speedup": speed,
-            "effective_fps": effective_fps,
-            "num_lines": line_count,
-            "start_ball_x": ball_start[0],
-            "start_ball_y": ball_start[1],
-            "final_ball_x": final_x,
-            "final_ball_y": final_y,
-            "bucket_hit": bucket_hit,
-            "solved": None,
-        }
-
-        metadata = {
-            "simulation": simulation_info,
-            "scene": {
-                "width": creator.scene.width,
-                "height": creator.scene.height,
-                "num_bodies": len(creator.scene.bodies),
-                "bodies": body_summaries,
-                "buckets": [
-                    {"index": i + 1, "center_x": center}
-                    for i, center in enumerate(bucket_centers)
-                ],
-            },
-            "seed": run_seed,
-            "outputs": {
-                "path": str(video_path),
-                "format": args.video_format,
-                "start_frame": str(start_snapshot),
-                "final_frame": str(final_snapshot),
-            },
-            "render": {
-                "pixel_scale": pixel_scale,
-            },
-            "trajectories": {
-                str(idx): [{"x": x, "y": y} for (x, y) in positions]
-                for idx, positions in trajectories.items()
-            },
-        }
-
-        metadata_path = output_dir / "random_scene_metadata.json"
-        with metadata_path.open("w", encoding="utf-8") as handle:
-            json.dump(metadata, handle, indent=2)
-
-        print(f"Run {run}/{args.runs}")
-        print("  Scene metadata written to", metadata_path)
-        print("  Animation written to", video_path)
-        print("  Start frame saved to", start_snapshot)
-        print("  Final frame saved to", final_snapshot)
+    print(f"\nAll {args.runs} runs completed!")
 
 
 if __name__ == "__main__":
