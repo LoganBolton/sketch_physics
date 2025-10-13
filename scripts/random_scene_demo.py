@@ -103,18 +103,18 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
         num_bars = random.choice([1, 2, 3])
 
     # Divide the space above buckets into 3 vertical sections
+    # Reserve 100 pixels at the top for the ball (ball is at height - 20, so we need 120 total buffer)
     scene_height = creator.scene.height
-    available_height = scene_height - bucket_top
+    ball_buffer = 120  # 100 pixels between line and ball, plus 20 for ball position
+    available_height = scene_height - bucket_top - ball_buffer
     section_height = available_height / 3
 
     # Define height ranges for each bar (from bottom to top)
-    # Bottom section: just above buckets
-    # Middle section: middle third
-    # Top section: top third
+    # Each section gets equal height with 20px padding between sections
     height_sections = [
-        (bucket_top + 20, bucket_top + section_height - 20),           # Bottom section
-        (bucket_top + section_height + 20, bucket_top + 2 * section_height - 20),  # Middle section
-        (bucket_top + 2 * section_height + 20, scene_height - 40),     # Top section
+        (bucket_top + 20, bucket_top + section_height - 10),           # Bottom section
+        (bucket_top + section_height + 10, bucket_top + 2 * section_height - 10),  # Middle section
+        (bucket_top + 2 * section_height + 10, bucket_top + 3 * section_height - 10),  # Top section
     ]
 
     # Select which sections to use based on number of bars
@@ -172,12 +172,18 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
         polygon = creator.add_convex_polygon(vertices, dynamic=False)
         polygon.set_color("black")
 
-    # Dynamic ball near the top.
+    # Dynamic ball near the top with normal distribution centered in the middle
     ball = creator.add("dynamic ball", scale=args.ball_radius)
-    bucket_width = creator.scene.width / max(1, len(bucket_centers))
-    center = random.choice(bucket_centers)
-    offset = random.uniform(-0.3 * bucket_width, 0.3 * bucket_width)
-    ball_x = _clamp(center + offset, 30, creator.scene.width - 30)
+
+    # Use normal distribution centered at the middle of the scene
+    scene_center_x = creator.scene.width / 2
+    # Standard deviation is ~1/6 of the width so ~99.7% of values fall within the scene
+    std_dev = creator.scene.width / 6
+
+    # Sample from normal distribution and clamp to valid range
+    ball_x = np.random.normal(scene_center_x, std_dev)
+    ball_x = _clamp(ball_x, 30, creator.scene.width - 30)
+
     ball_y = creator.scene.height - 20
     ball.set_center(ball_x, ball_y)
     ball.set_color("blue")
