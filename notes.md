@@ -36,8 +36,8 @@ python scripts/random_scene_demo.py \
       --num-bars 4 \
       --num-polys 0 \
       --num-buckets 4 \
-      --runs 10 \ 
-      --output-dir output/random_scene_batch13
+      --runs 10 \
+      --output-dir output/random_scene_batch23
 ```
 
 - Both scripts now emit `*_start.png` and `*_final.png` snapshots with trajectory overlays.

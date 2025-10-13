@@ -86,19 +86,25 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
         np.random.seed(args.seed)
 
     creator = creator_lib.TaskCreator()
+    creator.scene.width = 512
+    creator.scene.height = 512
+
+    # Remove the old boundary walls (they were created with old dimensions)
+    creator.body_list = [body for body in creator.body_list if 'wall' not in body.object_type]
+    creator.scene.bodies = [body._thrift_body for body in creator.body_list]
 
     bucket_centers, bucket_top = _add_buckets(creator, max(1, args.num_buckets))
 
     # Random static bars.
     safe_height = creator.scene.height - 80
-    max_bar_width = creator.scene.width / 1.75
+    max_bar_width = creator.scene.width / 1.7
     bars_created = 0
     for _ in range(max(0, args.num_bars)):
         width = random.uniform(40, max_bar_width)
         height = 3
         bar = creator.add_box(width=width, height=height, dynamic=False)
         cx = random.uniform(width / 2 + 10, creator.scene.width - width / 2 - 10)
-        angle = random.uniform(-80, 80)
+        angle = random.uniform(-30, 30)
         angle_rad = math.radians(angle)
         vertical_extent = (abs(width / 2 * math.sin(angle_rad)) +
                            abs(height / 2 * math.cos(angle_rad)))
@@ -159,12 +165,7 @@ def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> Tuple[List[flo
     for i in range(count):
         center_x = (i + 0.5) * bucket_width
 
-        # Base (gray)
-        base = creator.add_box(width=bucket_width,
-                               height=base_height,
-                               dynamic=False)
-        base.set_center(center_x, base_height / 2)
-        base.set_color("purple")
+        # Base removed - no longer needed
 
         if i > 0:
             left = creator.add_box(width=wall_thickness,
@@ -173,7 +174,7 @@ def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> Tuple[List[flo
             left_x = center_x - (bucket_width / 2) + wall_thickness / 2
             if last_right_x is not None:
                 left_x = last_right_x  # remove horizontal gap
-            left.set_center(left_x, bucket_height / 2 + base_height)
+            left.set_center(left_x, bucket_height / 2)
             left.set_color("purple")
 
         if i < count - 1:
@@ -181,12 +182,12 @@ def _add_buckets(creator: creator_lib.TaskCreator, count: int) -> Tuple[List[flo
                                     height=bucket_height,
                                     dynamic=False)
             right_x = center_x + (bucket_width / 2) - wall_thickness / 2
-            right.set_center(right_x, bucket_height / 2 + base_height)
+            right.set_center(right_x, bucket_height / 2)
             right.set_color("purple")
             last_right_x = right_x
         centers.append(center_x)
 
-    bucket_top = bucket_height + base_height
+    bucket_top = bucket_height
     return centers, bucket_top
 
 def main(args: argparse.Namespace) -> None:

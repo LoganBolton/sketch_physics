@@ -1,3 +1,5 @@
+house_plan/dataset/*
+
 # General exluded files
 *.o
 __pycache__
