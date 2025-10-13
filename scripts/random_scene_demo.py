@@ -46,8 +46,8 @@ def parse_args() -> argparse.Namespace:
                         help="Keep every Nth physics frame (default: 2)")
     parser.add_argument("--playback-speed", type=float, default=10.0,
                         help="Playback speed multiplier (default: 10)")
-    parser.add_argument("--steps", type=int, default=1500,
-                        help="Number of physics steps to simulate (default: 500)")
+    parser.add_argument("--steps", type=int, default=2100,
+                        help="Number of physics steps to simulate")
     parser.add_argument("--num-bars", type=int, default=4,
                         help="Number of random static bars to add (default: 4)")
     parser.add_argument("--num-polys", type=int, default=0,
@@ -110,6 +110,11 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
     right_wall.set_center(creator.scene.width - wall_thickness / 2, wall_height / 2)
     right_wall.set_color("black")
 
+    # Bottom floor to prevent ball from falling through
+    floor = creator.add_box(width=creator.scene.width, height=wall_thickness, dynamic=False)
+    floor.set_center(creator.scene.width / 2, wall_thickness / 2)
+    floor.set_color("black")
+
     # Determine number of bars: cycle through 1, 2, 3 based on run number
     if hasattr(args, 'run_number'):
         num_bars = ((args.run_number - 1) % 3) + 1
@@ -142,13 +147,13 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
 
     # Random static bars in designated sections
     # Add horizontal margins to shrink the available width for lines
-    horizontal_margin = 60  # 60 pixels margin on each side
+    horizontal_margin = 5  # 60 pixels margin on each side
     available_width = creator.scene.width - 2 * horizontal_margin
 
     max_bar_width = available_width * 0.8
-    min_bar_width = available_width * 0.5
+    min_bar_width = available_width * 0.30
     MAX_ANGLE = 20
-    MIN_ANGLE = 5
+    MIN_ANGLE = 6
 
     bars_created = 0
     previous_angle = None  # Track the previous bar's angle for sequential placement
@@ -345,8 +350,34 @@ def _process_single_run(run: int, args: argparse.Namespace, base_output: pathlib
 
     body_summaries = renderer._summarize_scene_bodies(creator.scene)
     bucket_width = creator.scene.width / max(1, len(bucket_centers))
-    bucket_left_edges = [center - bucket_width / 2 for center in bucket_centers]
-    bucket_right_edges = [center + bucket_width / 2 for center in bucket_centers]
+    wall_thickness = 3  # Same as in _add_buckets
+
+    # Calculate actual bucket boundaries by finding the wall positions
+    # Walls are placed at the boundaries between buckets, so we need to find
+    # the midpoint between bucket centers
+    bucket_left_edges = []
+    bucket_right_edges = []
+
+    for i in range(len(bucket_centers)):
+        # Left edge
+        if i == 0:
+            # First bucket: left edge is the left scene boundary (accounting for side wall)
+            left_edge = 2  # Account for 2-pixel side wall
+        else:
+            # Other buckets: left edge is midway between this center and previous center
+            left_edge = (bucket_centers[i-1] + bucket_centers[i]) / 2
+
+        # Right edge
+        if i == len(bucket_centers) - 1:
+            # Last bucket: right edge is the right scene boundary (accounting for side wall)
+            right_edge = creator.scene.width - 2  # Account for 2-pixel side wall
+        else:
+            # Other buckets: right edge is midway between this center and next center
+            right_edge = (bucket_centers[i] + bucket_centers[i+1]) / 2
+
+        bucket_left_edges.append(left_edge)
+        bucket_right_edges.append(right_edge)
+
     ball_index = next(
         idx for idx, body in enumerate(body_summaries)
         if body["bodyType"] == "DYNAMIC"
@@ -354,9 +385,12 @@ def _process_single_run(run: int, args: argparse.Namespace, base_output: pathlib
     final_x, final_y = trajectories[ball_index][-1]
     ball_radius = creator.scene.bodies[ball_index].shapes[0].circle.radius
     bucket_hit = None
-    if final_y + ball_radius <= bucket_top:
+
+    # Check if ball is at bucket height (ball center below bucket top)
+    if final_y <= bucket_top:
         for idx, (left, right) in enumerate(zip(bucket_left_edges, bucket_right_edges), start=1):
-            if left + ball_radius <= final_x <= right - ball_radius:
+            # Ball center must be within bucket boundaries
+            if left <= final_x <= right:
                 bucket_hit = idx
                 break
 
@@ -420,8 +454,8 @@ def main(args: argparse.Namespace) -> None:
     base_output.mkdir(parents=True, exist_ok=True)
 
     # Limit the number of parallel processes to avoid memory issues
-    # Use at most 6 processes or the number of CPU cores, whichever is smaller
-    num_processes = min(6, multiprocessing.cpu_count())
+    # Use at most 5 processes or the number of CPU cores, whichever is smaller
+    num_processes = min(5, multiprocessing.cpu_count())
 
     print(f"Starting parallel generation of {args.runs} runs using {num_processes} processes...")
 
