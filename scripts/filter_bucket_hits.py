@@ -27,6 +27,7 @@ def main():
 
     copied = 0
     skipped = 0
+    line_counts = {1: 0, 2: 0, 3: 0}  # Track scenes by number of lines
 
     for run_dir in sorted(source_dir.glob("run_*")):
         metadata_file = run_dir / args.metadata_file
@@ -45,13 +46,23 @@ def main():
             if new_run_dir.exists():
                 shutil.rmtree(new_run_dir)
             shutil.copytree(run_dir, new_run_dir)
-            print(f"Copied {run_dir.name} (bucket {bucket_hit})")
+
+            # Track line count
+            num_lines = metadata.get("simulation", {}).get("num_lines")
+            if num_lines in line_counts:
+                line_counts[num_lines] += 1
+
+            print(f"Copied {run_dir.name} (bucket {bucket_hit}, {num_lines} lines)")
             copied += 1
         else:
-            skipped += 1is
+            skipped += 1
 
     print(f"\nCopied {copied} scenes with bucket hits")
     print(f"Skipped {skipped} scenes without bucket hits")
+    print(f"\nScenes by number of lines:")
+    print(f"  1 line:  {line_counts[1]} scenes")
+    print(f"  2 lines: {line_counts[2]} scenes")
+    print(f"  3 lines: {line_counts[3]} scenes")
 
 
 if __name__ == "__main__":

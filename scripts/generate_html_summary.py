@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import pathlib
 from typing import List, Dict, Any
@@ -16,6 +17,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=pathlib.Path, default=None,
                         help="Output HTML file path (default: input_dir/summary.html)")
     return parser.parse_args()
+
+
+def image_to_base64(image_path: pathlib.Path) -> str:
+    """Convert an image file to a base64 data URI."""
+    with open(image_path, "rb") as f:
+        image_data = f.read()
+    base64_data = base64.b64encode(image_data).decode("utf-8")
+    return f"data:image/png;base64,{base64_data}"
 
 
 def collect_run_data(input_dir: pathlib.Path) -> List[Dict[str, Any]]:
@@ -43,8 +52,8 @@ def collect_run_data(input_dir: pathlib.Path) -> List[Dict[str, Any]]:
 
             runs.append({
                 "name": run_dir.name,
-                "start_image": start_image.relative_to(input_dir),
-                "final_image": final_image.relative_to(input_dir),
+                "start_image": image_to_base64(start_image),
+                "final_image": image_to_base64(final_image),
                 "bucket_hit": metadata["simulation"].get("bucket_hit"),
                 "num_lines": metadata["simulation"].get("num_lines"),
                 "start_ball_x": metadata["simulation"].get("start_ball_x"),
@@ -65,8 +74,8 @@ def collect_run_data(input_dir: pathlib.Path) -> List[Dict[str, Any]]:
             if start_image.exists() and final_image.exists():
                 runs.append({
                     "name": "single_run",
-                    "start_image": start_image.name,
-                    "final_image": final_image.name,
+                    "start_image": image_to_base64(start_image),
+                    "final_image": image_to_base64(final_image),
                     "bucket_hit": metadata["simulation"].get("bucket_hit"),
                     "num_lines": metadata["simulation"].get("num_lines"),
                     "start_ball_x": metadata["simulation"].get("start_ball_x"),
@@ -191,9 +200,17 @@ def generate_html(runs: List[Dict[str, Any]], output_path: pathlib.Path) -> None
     bucket_hits = [r for r in runs if r["bucket_hit"] is not None]
     hit_rate = (len(bucket_hits) / total_runs * 100) if total_runs > 0 else 0
 
+    # Count scenes by number of lines
+    line_counts = {1: 0, 2: 0, 3: 0}
+    for run in runs:
+        num_lines = run.get("num_lines")
+        if num_lines in line_counts:
+            line_counts[num_lines] += 1
+
     html_content += f"""
     <div class="summary-stats">
         <p><strong>Total Runs:</strong> {total_runs}</p>
+        <p><strong>Scenes by Lines:</strong> 1 line: {line_counts[1]} | 2 lines: {line_counts[2]} | 3 lines: {line_counts[3]}</p>
     </div>
 
     <div class="container">
@@ -255,6 +272,7 @@ def generate_html(runs: List[Dict[str, Any]], output_path: pathlib.Path) -> None
     print(f"HTML summary generated: {output_path}")
     print(f"Total runs: {total_runs}")
     print(f"Bucket hits: {len(bucket_hits)} ({hit_rate:.1f}%)")
+    print(f"Scenes by lines: 1 line: {line_counts[1]}, 2 lines: {line_counts[2]}, 3 lines: {line_counts[3]}")
 
 
 def main() -> None:

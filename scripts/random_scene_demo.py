@@ -154,10 +154,14 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
     min_bar_width = available_width * 0.30
     MAX_ANGLE = 20
     MIN_ANGLE = 6
+    # More extreme angles for the bottom-most line (last in the list)
+    BOTTOM_MAX_ANGLE = 35
+    BOTTOM_MIN_ANGLE = 25
 
     bars_created = 0
     previous_angle = None  # Track the previous bar's angle for sequential placement
     first_bar_cx = None  # Track the first bar's x position for ball placement
+    total_bars = len(selected_sections)
 
     for section_idx, (min_cy, max_cy) in enumerate(selected_sections):
         width = random.uniform(min_bar_width, max_bar_width)
@@ -169,12 +173,19 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
         max_cx = creator.scene.width - horizontal_margin - width / 2
         scene_third = available_width / 3
 
+        # Check if this is the last bar (bottom-most line)
+        is_bottom_bar = (section_idx == total_bars - 1)
+
+        # Use more extreme angles for the bottom bar
+        max_angle = BOTTOM_MAX_ANGLE if is_bottom_bar else MAX_ANGLE
+        min_angle = BOTTOM_MIN_ANGLE if is_bottom_bar else MIN_ANGLE
+
         if section_idx == 0:
             # First bar: random angle and position
             if random.random() < 0.5:
-                angle = random.uniform(MIN_ANGLE, MAX_ANGLE)
+                angle = random.uniform(min_angle, max_angle)
             else:
-                angle = random.uniform(-MAX_ANGLE, -MIN_ANGLE)
+                angle = random.uniform(-max_angle, -min_angle)
             cx = random.uniform(min_cx, max_cx)
         else:
             # Subsequent bars: angle opposite to previous, position based on deflection
@@ -182,11 +193,11 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
             # If previous angle was negative (tilts left), ball deflects right
             if previous_angle > 0:
                 # Previous bar tilted right -> ball deflects left -> negative angle on left side
-                angle = random.uniform(-MAX_ANGLE, -MIN_ANGLE)
+                angle = random.uniform(-max_angle, -min_angle)
                 cx = random.uniform(min_cx, horizontal_margin + scene_third - width / 2)
             else:
                 # Previous bar tilted left -> ball deflects right -> positive angle on right side
-                angle = random.uniform(MIN_ANGLE, MAX_ANGLE)
+                angle = random.uniform(min_angle, max_angle)
                 cx = random.uniform(horizontal_margin + 2 * scene_third + width / 2, max_cx)
 
         # Calculate vertical extent and ensure bar fits in section
@@ -202,6 +213,31 @@ def _build_random_scene(args: argparse.Namespace) -> Tuple[creator_lib.TaskCreat
             cy = random.uniform(adjusted_min, adjusted_max)
         else:
             cy = (min_cy + max_cy) / 2
+
+        # For bottom bar, check if line endpoints will clip into buckets (below y=70)
+        if is_bottom_bar:
+            # Calculate the endpoints of the rotated line
+            half_width = width / 2
+            dx = half_width * math.cos(angle_rad)
+            dy = half_width * math.sin(angle_rad)
+
+            left_end_y = cy - dy
+            right_end_y = cy + dy
+
+            # Check if either endpoint is below y=70 (bucket region)
+            min_endpoint_y = min(left_end_y, right_end_y)
+            if min_endpoint_y < 70:
+                # Reduce width so the lowest endpoint is at y=70
+                # We need: cy - (new_width/2) * sin(angle) = 70
+                # Solving for new_width: new_width = 2 * (cy - 70) / sin(angle)
+                if abs(math.sin(angle_rad)) > 0.01:  # Avoid division by very small numbers
+                    max_safe_width = 2 * (cy - 70) / abs(math.sin(angle_rad))
+                    width = max(min_bar_width, min(width, max_safe_width))
+
+                    # Recreate the bar with new width
+                    creator.body_list.remove(bar)
+                    creator.scene.bodies = [body._thrift_body for body in creator.body_list]
+                    bar = creator.add_box(width=width, height=height, dynamic=False)
 
         bar.set_center(cx, cy).set_angle(angle)
         bar.set_color("black")
